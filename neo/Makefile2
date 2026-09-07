@@ -6,7 +6,7 @@ LIBS = -lopenal -lpthread -lvitaGL -lvitashark -lmathneon -lvorbisfile -lvorbis 
 	-lSceCtrl_stub -lSceTouch_stub -lSceMotion_stub -lm -lSceAppMgr_stub \
 	-lSceShaccCgExt -ltaihen_stub -lpng -lSceDisplay_stub -lSceGxm_stub -lSceFios2_stub \
 	-lSceAppUtil_stub -lScePgf_stub -ljpeg -lSceRtc_stub -lScePower_stub -lcurl -lssl -lcrypto \
-	-lSceAudioIn_stub -lSceKernelDmacMgr_stub -lSceIme_stub -lSceHid_stub \
+	-lSceAudioIn_stub -lSceKernelDmacMgr_stub -lSceIme_stub -lSceHid_stub -lSceIofilemgr_stub \
 	-Wl,--whole-archive -lSceNet_stub -lSceSysmodule_stub -lSceNetCtl_stub -Wl,--no-whole-archive
 
 MISCOBJS = \
@@ -190,6 +190,7 @@ SYSOBJS = \
     sys/posix/posix_net.o \
     sys/posix/posix_main.o \
     sys/linux/main.o \
+    sys/vita_alloc.o \
 	sys/glimp.o
 	
 FRAMEWORKOBJS = \

@@ -29,6 +29,7 @@ If you have questions concerning this license or the applicable additional terms
 #include <SDL.h>
 
 #include "sys/platform.h"
+#include "sys/vita_alloc.h"
 #include "framework/Licensee.h"
 
 #include "renderer/tr_local.h"
@@ -174,6 +175,7 @@ bool GLimp_Init(glimpParms_t parms) {
 	glConfig.vidHeightReal = 544;
 	glConfig.isFullscreen = true;
 	vglInitWithCustomThreshold(0, glConfig.vidWidthReal, glConfig.vidHeightReal, 10 * 1024 * 1024, 0, 0, 0, SCE_GXM_MULTISAMPLE_4X);
+	Sys_EnableVitaGLAllocators();
 #endif
 	
 	//common->Printf("Using %d color bits, %d depth, %d stencil display\n",
