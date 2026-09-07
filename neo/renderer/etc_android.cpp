@@ -15,6 +15,9 @@
 #include "etc1_android.h"
 
 #include <string.h>
+#ifdef __vita__
+#include <vitasdk.h>
+#endif
 
 /* From http://www.khronos.org/registry/gles/extensions/OES/OES_compressed_ETC1_RGB8_texture.txt
 
@@ -510,8 +513,8 @@ etc1_uint32 etc1_get_encoded_data_size(etc1_uint32 width, etc1_uint32 height) {
 //       pixel (x,y) is at pIn + pixelSize * x + stride * y + redOffset;
 // pOut - pointer to encoded data. Must be large enough to store entire encoded image.
 
-int etc1_encode_image(const etc1_byte* pIn, etc1_uint32 width, etc1_uint32 height,
-                      etc1_uint32 pixelSize, etc1_uint32 stride, etc1_byte* pOut) {
+static int etc1_encode_image_serial(const etc1_byte* pIn, etc1_uint32 width, etc1_uint32 height,
+                                    etc1_uint32 pixelSize, etc1_uint32 stride, etc1_byte* pOut) {
 	if (pixelSize < 2 || pixelSize > 4) {
 		return -1;
 	}
@@ -560,6 +563,118 @@ int etc1_encode_image(const etc1_byte* pIn, etc1_uint32 width, etc1_uint32 heigh
 		}
 	}
 	return 0;
+}
+
+#ifdef __vita__
+namespace {
+const int ETC1_WORKER_COUNT = 2;
+
+struct etc1_worker_job_t {
+	const etc1_byte *input;
+	etc1_byte *output;
+	etc1_uint32 width;
+	etc1_uint32 height;
+	etc1_uint32 pixelSize;
+	etc1_uint32 stride;
+	int result;
+};
+
+struct etc1_worker_pool_t {
+	bool attempted;
+	bool available;
+	volatile bool stop;
+	SceUID dispatchMutex;
+	SceUID doneSema;
+	SceUID workSema[ETC1_WORKER_COUNT];
+	SceUID threads[ETC1_WORKER_COUNT];
+	etc1_worker_job_t jobs[ETC1_WORKER_COUNT];
+};
+
+static etc1_worker_pool_t etc1Pool = {};
+
+static int etc1_worker_entry(SceSize args, void *argp) {
+	int worker = 0;
+	if ( args == sizeof(worker) ) {
+		memcpy(&worker, argp, sizeof(worker));
+	}
+	while ( !etc1Pool.stop ) {
+		sceKernelWaitSema(etc1Pool.workSema[worker], 1, NULL);
+		if ( etc1Pool.stop ) break;
+		etc1_worker_job_t &job = etc1Pool.jobs[worker];
+		job.result = etc1_encode_image_serial(job.input, job.width, job.height,
+			job.pixelSize, job.stride, job.output);
+		sceKernelSignalSema(etc1Pool.doneSema, 1);
+	}
+	return 0;
+}
+
+static bool etc1_init_workers() {
+	if ( etc1Pool.attempted ) return etc1Pool.available;
+	etc1Pool.attempted = true;
+	etc1Pool.dispatchMutex = sceKernelCreateMutex("D3ETC1Dispatch", 0, 0, NULL);
+	etc1Pool.doneSema = sceKernelCreateSema("D3ETC1Done", 0, 0, ETC1_WORKER_COUNT, NULL);
+	if ( etc1Pool.dispatchMutex < 0 || etc1Pool.doneSema < 0 ) return false;
+
+	for ( int i = 0; i < ETC1_WORKER_COUNT; ++i ) {
+		etc1Pool.workSema[i] = sceKernelCreateSema("D3ETC1Work", 0, 0, 1, NULL);
+		if ( etc1Pool.workSema[i] < 0 ) return false;
+		etc1Pool.threads[i] = sceKernelCreateThread("D3ETC1Worker", etc1_worker_entry,
+			0x41, 64 * 1024, 0, SCE_KERNEL_CPU_MASK_USER_ALL, NULL);
+		if ( etc1Pool.threads[i] < 0 ) return false;
+		int worker = i;
+		if ( sceKernelStartThread(etc1Pool.threads[i], sizeof(worker), &worker) < 0 ) return false;
+	}
+	etc1Pool.available = true;
+	return true;
+}
+
+static int etc1_encode_image_parallel(const etc1_byte* pIn, etc1_uint32 width,
+		etc1_uint32 height, etc1_uint32 pixelSize, etc1_uint32 stride, etc1_byte* pOut) {
+	const etc1_uint32 blockRows = (height + 3) / 4;
+	// Small images are faster without two kernel wakeups.
+	if ( blockRows < 3 || width * height < 4096 || !etc1_init_workers() ) {
+		return etc1_encode_image_serial(pIn, width, height, pixelSize, stride, pOut);
+	}
+
+	sceKernelLockMutex(etc1Pool.dispatchMutex, 1, NULL);
+	const etc1_uint32 encodedRowBytes = ((width + 3) & ~3) * 2;
+	for ( int i = 0; i < ETC1_WORKER_COUNT; ++i ) {
+		const etc1_uint32 startBlock = blockRows * i / (ETC1_WORKER_COUNT + 1);
+		const etc1_uint32 endBlock = blockRows * (i + 1) / (ETC1_WORKER_COUNT + 1);
+		etc1_worker_job_t &job = etc1Pool.jobs[i];
+		job.input = pIn + startBlock * 4 * stride;
+		job.output = pOut + startBlock * encodedRowBytes;
+		job.width = width;
+		job.height = endBlock * 4 - startBlock * 4;
+		job.pixelSize = pixelSize;
+		job.stride = stride;
+		job.result = 0;
+		sceKernelSignalSema(etc1Pool.workSema[i], 1);
+	}
+
+	const etc1_uint32 callerStartBlock = blockRows * ETC1_WORKER_COUNT /
+		(ETC1_WORKER_COUNT + 1);
+	const etc1_uint32 callerStartY = callerStartBlock * 4;
+	const int callerResult = etc1_encode_image_serial(
+		pIn + callerStartY * stride, width, height - callerStartY,
+		pixelSize, stride, pOut + callerStartBlock * encodedRowBytes);
+
+	sceKernelWaitSema(etc1Pool.doneSema, ETC1_WORKER_COUNT, NULL);
+	int result = callerResult;
+	for ( int i = 0; i < ETC1_WORKER_COUNT; ++i ) result |= etc1Pool.jobs[i].result;
+	sceKernelUnlockMutex(etc1Pool.dispatchMutex, 1);
+	return result;
+}
+}
+#endif
+
+int etc1_encode_image(const etc1_byte* pIn, etc1_uint32 width, etc1_uint32 height,
+                      etc1_uint32 pixelSize, etc1_uint32 stride, etc1_byte* pOut) {
+#ifdef __vita__
+	return etc1_encode_image_parallel(pIn, width, height, pixelSize, stride, pOut);
+#else
+	return etc1_encode_image_serial(pIn, width, height, pixelSize, stride, pOut);
+#endif
 }
 
 // Decode an entire image.
@@ -672,4 +787,3 @@ etc1_uint32 etc1_pkm_get_width(const etc1_byte* pHeader) {
 etc1_uint32 etc1_pkm_get_height(const etc1_byte* pHeader) {
 	return readBEUint16(pHeader + ETC1_PKM_HEIGHT_OFFSET);
 }
-
