@@ -186,6 +186,10 @@ typedef struct zlib_filefunc64_def_s
 
 void fill_fopen64_filefunc OF((zlib_filefunc64_def* pzlib_filefunc_def));
 void fill_fopen_filefunc OF((zlib_filefunc_def* pzlib_filefunc_def));
+#if defined(__vita__)
+void fill_sceio64_filefunc OF((zlib_filefunc64_def* pzlib_filefunc_def));
+voidpf sceio_clone_file OF((voidpf file));
+#endif
 
 /* now internal definition, only for zip.c and unzip.h */
 typedef struct zlib_filefunc64_32_def_s

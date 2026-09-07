@@ -124,7 +124,11 @@ The file was renamed from unzip.c to unzip.cpp so we can use C++ functions from 
 
 
 #ifndef UNZ_BUFSIZE
+#if defined(__vita__)
+#define UNZ_BUFSIZE (64 * 1024)
+#else
 #define UNZ_BUFSIZE (16384)
+#endif
 #endif
 
 #ifndef UNZ_MAXFILENAMEINZIP
@@ -634,7 +638,11 @@ local unzFile unzOpenInternal (const void *path,
     us.z_filefunc.zseek32_file = NULL;
     us.z_filefunc.ztell32_file = NULL;
     if (pzlib_filefunc64_32_def==NULL)
+#if defined(__vita__)
+        fill_sceio64_filefunc(&us.z_filefunc.zfile_func64);
+#else
         fill_fopen64_filefunc(&us.z_filefunc.zfile_func64);
+#endif
     else
         us.z_filefunc = *pzlib_filefunc64_32_def;
     us.is64bitOpenFunction = is64bitOpenFunction;
@@ -2176,10 +2184,14 @@ extern unzFile unzReOpen (const char* path, unzFile file)
 
 	memcpy(s, zFile, sizeof(unz64_s));
 
-	// create new filestream for path
+	// create an independent logical stream for the cloned zip handle
+#if defined(__vita__)
+	voidp fin = sceio_clone_file(zFile->filestream);
+#else
 	voidp fin = ZOPEN64(s->z_filefunc,
 	                    path,
 	                    ZLIB_FILEFUNC_MODE_READ | ZLIB_FILEFUNC_MODE_EXISTING);
+#endif
 
 	if( fin == NULL ) {
 		TRYFREE(s);
