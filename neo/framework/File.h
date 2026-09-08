@@ -221,7 +221,10 @@ private:
 	FILE *					o;				// file handle
 #if defined(__vita__)
 	int					sceHandle;		// native sceIo handle, -1 for FILE-backed temporaries
-	enum { SCE_WRITE_BUFFER_SIZE = 64 * 1024 };
+	enum { SCE_READ_BUFFER_SIZE = 64 * 1024, SCE_WRITE_BUFFER_SIZE = 64 * 1024 };
+	byte *					sceReadBuffer;
+	int					sceReadBufferPosition;
+	int					sceReadBufferLength;
 	byte *					sceWriteBuffer;
 	int					sceWriteBufferUsed;
 	bool					sceWriteUnbuffered;

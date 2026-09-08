@@ -1027,6 +1027,9 @@ idFile_Permanent::idFile_Permanent( void ) {
 	o = NULL;
 #if defined(__vita__)
 	sceHandle = -1;
+	sceReadBuffer = NULL;
+	sceReadBufferPosition = 0;
+	sceReadBufferLength = 0;
 	sceWriteBuffer = NULL;
 	sceWriteBufferUsed = 0;
 	sceWriteUnbuffered = false;
@@ -1051,6 +1054,10 @@ idFile_Permanent::~idFile_Permanent( void ) {
 	if ( sceWriteBuffer ) {
 		Mem_Free( sceWriteBuffer );
 		sceWriteBuffer = NULL;
+	}
+	if ( sceReadBuffer ) {
+		Mem_Free( sceReadBuffer );
+		sceReadBuffer = NULL;
 	}
 #endif
 	if ( o ) {
@@ -1087,8 +1094,58 @@ int idFile_Permanent::Read( void *buffer, int len ) {
 	buf = (byte *)buffer;
 
 #if defined(__vita__)
-	if ( sceHandle >= 0 && FlushSceWriteBuffer() < 0 ) {
-		return 0;
+	if ( sceHandle >= 0 ) {
+		if ( FlushSceWriteBuffer() < 0 ) {
+			return 0;
+		}
+
+		remaining = len;
+		tries = 0;
+		while ( remaining > 0 ) {
+			const int available = sceReadBufferLength - sceReadBufferPosition;
+			if ( available > 0 ) {
+				const int amount = Min( available, remaining );
+				memcpy( buf, sceReadBuffer + sceReadBufferPosition, amount );
+				sceReadBufferPosition += amount;
+				remaining -= amount;
+				buf += amount;
+				continue;
+			}
+
+			sceReadBufferPosition = 0;
+			sceReadBufferLength = 0;
+			if ( remaining < SCE_READ_BUFFER_SIZE && !sceReadBuffer ) {
+				sceReadBuffer = static_cast<byte *>( Mem_Alloc( SCE_READ_BUFFER_SIZE ) );
+			}
+
+			if ( remaining < SCE_READ_BUFFER_SIZE && sceReadBuffer ) {
+				read = (int)sceIoRead( sceHandle, sceReadBuffer, SCE_READ_BUFFER_SIZE );
+				if ( read > 0 ) {
+					sceReadBufferLength = read;
+					tries = 0;
+					continue;
+				}
+			} else {
+				read = (int)sceIoRead( sceHandle, buf, remaining );
+				if ( read > 0 ) {
+					remaining -= read;
+					buf += read;
+					tries = 0;
+					continue;
+				}
+			}
+
+			if ( read < 0 ) {
+				common->FatalError( "idFile_Permanent::Read: sceIoRead failed with 0x%08x for %s", read, name.c_str() );
+				return len - remaining;
+			}
+			if ( tries++ ) {
+				fileSystem->AddToReadCount( len - remaining );
+				return len - remaining;
+			}
+		}
+		fileSystem->AddToReadCount( len );
+		return len;
 	}
 #endif
 
@@ -1096,11 +1153,7 @@ int idFile_Permanent::Read( void *buffer, int len ) {
 	tries = 0;
 	while( remaining ) {
 		block = remaining;
-#if defined(__vita__)
-		read = sceHandle >= 0 ? (int)sceIoRead( sceHandle, buf, block ) : (int)fread( buf, 1, block, o );
-#else
 		read = fread( buf, 1, block, o );
-#endif
 		if ( read == 0 ) {
 			// we might have been trying to read from a CD, which
 			// sometimes returns a 0 read on windows
@@ -1283,7 +1336,7 @@ int idFile_Permanent::Tell( void ) {
 #if defined(__vita__)
 	if ( sceHandle >= 0 ) {
 		const SceOff position = sceIoLseek( sceHandle, 0, SCE_SEEK_CUR );
-		return position < 0 ? -1 : (int)( position + sceWriteBufferUsed );
+		return position < 0 ? -1 : (int)( position - ( sceReadBufferLength - sceReadBufferPosition ) + sceWriteBufferUsed );
 	}
 #endif
 	return ftell( o );
@@ -1349,6 +1402,11 @@ int idFile_Permanent::Seek( long offset, fsOrigin_t origin ) {
 #if defined(__vita__)
 	if ( sceHandle >= 0 ) {
 		if ( FlushSceWriteBuffer() < 0 ) return -1;
+		if ( _origin == SEEK_CUR ) {
+			offset -= sceReadBufferLength - sceReadBufferPosition;
+		}
+		sceReadBufferPosition = 0;
+		sceReadBufferLength = 0;
 		return sceIoLseek( sceHandle, offset, _origin ) < 0 ? -1 : 0;
 	}
 #endif
