@@ -35,6 +35,11 @@ If you have questions concerning this license or the applicable additional terms
 #endif
 
 #include "sys/platform.h"
+#include "framework/PreparedCachePack.h"
+
+#if defined(__vita__)
+	#include <vitasdk.h>
+#endif
 
 #ifdef ID_ENABLE_CURL
 	#include <curl/curl.h>
@@ -259,6 +264,7 @@ static idInitExclusions	initExclusions;
 typedef struct fileInPack_s {
 	idStr				name;						// name of the file
 	ZPOS64_T			pos;						// file info position in zip
+	int					length;					// uncompressed size cached at PK4 scan time
 	struct fileInPack_s * next;						// next file in the hash
 } fileInPack_t;
 
@@ -286,7 +292,7 @@ typedef struct {
 	addonInfo_t			*addon_info;
 	pureStatus_t		pureStatus;
 	bool				isNew;						// for downloaded paks
-#ifdef VITA
+#ifdef __vita__
 	bool				isPSARC;
 	int					psarcHandle;
 	void				*psarcMountBuf;
@@ -489,7 +495,7 @@ idCVar	idFileSystemLocal::fs_cdpath( "fs_cdpath", "", CVAR_SYSTEM | CVAR_INIT, "
 idCVar	idFileSystemLocal::fs_devpath( "fs_devpath", "", CVAR_SYSTEM | CVAR_INIT, "" );
 idCVar	idFileSystemLocal::fs_game( "fs_game", "", CVAR_SYSTEM | CVAR_INIT | CVAR_SERVERINFO, "mod path" );
 idCVar  idFileSystemLocal::fs_game_base( "fs_game_base", "", CVAR_SYSTEM | CVAR_INIT | CVAR_SERVERINFO, "alternate mod path, searched after the main fs_game path, before the basedir" );
-#if defined(__AROS__) || defined(WIN32)
+#if defined(__AROS__) || defined(WIN32) || defined(__vita__)
 idCVar	idFileSystemLocal::fs_caseSensitiveOS( "fs_caseSensitiveOS", "0", CVAR_SYSTEM | CVAR_BOOL, "" );
 #else
 idCVar	idFileSystemLocal::fs_caseSensitiveOS( "fs_caseSensitiveOS", "1", CVAR_SYSTEM | CVAR_BOOL, "" );
@@ -943,11 +949,19 @@ void idFileSystemLocal::RemoveFile( const char *relativePath ) {
 
 	if ( fs_devpath.GetString()[0] ) {
 		OSPath = BuildOSPath( fs_devpath.GetString(), gameFolder, relativePath );
+#if defined(__vita__)
+		sceIoRemove( OSPath );
+#else
 		remove( OSPath );
+#endif
 	}
 
 	OSPath = BuildOSPath( fs_savepath.GetString(), gameFolder, relativePath );
+#if defined(__vita__)
+	sceIoRemove( OSPath );
+#else
 	remove( OSPath );
+#endif
 
 	ClearDirCache();
 }
@@ -1142,7 +1156,6 @@ void idFileSystemLocal::FreeFile( void *buffer ) {
 }
 
 #ifdef __vita__
-#include <vitasdk.h>
 void generateFolder(const char *path) {
 	common->Printf( "Generating folder for %s\n", path );
 	char *s = strstr(path, "/");
@@ -1308,18 +1321,25 @@ pack_t *idFileSystemLocal::LoadZipFile( const char *zipfile ) {
 	int				hash;
 	int				fs_numHeaderLongs;
 	int *			fs_headerLongs;
-	FILE			*f;
 	int				len;
 	int				confHash;
 	fileInPack_t	*pakFile;
 
-	f = OpenOSFile( zipfile, "rb" );
+#if defined(__vita__)
+	SceIoStat zipStat;
+	if ( sceIoGetstat( zipfile, &zipStat ) < 0 || zipStat.st_size > 0x7fffffff ) {
+		return NULL;
+	}
+	len = (int)zipStat.st_size;
+#else
+	FILE *f = OpenOSFile( zipfile, "rb" );
 	if ( !f ) {
 		return NULL;
 	}
 	fseek( f, 0, SEEK_END );
 	len = ftell( f );
 	fclose( f );
+#endif
 
 	fs_numHeaderLongs = 0;
 
@@ -1365,6 +1385,7 @@ pack_t *idFileSystemLocal::LoadZipFile( const char *zipfile ) {
 		buildBuffer[i].name.BackSlashesToSlashes();
 		// store the file position in the zip
 		buildBuffer[i].pos = unzGetOffset64( uf );
+		buildBuffer[i].length = (int)file_info.uncompressed_size;
 		// add the file to the hash
 		buildBuffer[i].next = pack->hashTable[hash];
 		pack->hashTable[hash] = &buildBuffer[i];
@@ -2794,6 +2815,7 @@ void idFileSystemLocal::Shutdown( bool reloading ) {
 	Sys_TriggerEvent();
 	Sys_DestroyThread(backgroundThread);
 	backgroundThread_exit = false;
+	PreparedCachePack_Shutdown();
 
 	gameFolder.Clear();
 
@@ -2983,21 +3005,13 @@ idFile_InZip * idFileSystemLocal::ReadFileFromZip( pack_t *pak, fileInPack_t *pa
 		common->FatalError( "Couldn't reopen %s", pak->pakFilename.c_str() );
 	}
 
-	// the following stuff is needed to get the uncompress filesize (for file->fileSize)
-	char	filename_inzip[MAX_ZIPPED_FILE_NAME];
-	unz_file_info64	file_info;
-	int err = unzGetCurrentFileInfo64( uf, &file_info, filename_inzip, sizeof(filename_inzip), NULL, 0, NULL, 0 );
-	if ( err != UNZ_OK ) {
-		common->FatalError( "Couldn't get file info for %s in %s, pos %llu", relativePath, pak->pakFilename.c_str(), pakFile->pos );
-	}
-
 	// create idFile_InZip and set fields accordingly
 	idFile_InZip *file = new idFile_InZip();
 	file->z = uf;
 	file->name = relativePath;
 	file->fullPath = pak->pakFilename + "/" + relativePath;
 	file->zipFilePos = pakFile->pos;
-	file->fileSize = file_info.uncompressed_size;
+	file->fileSize = pakFile->length;
 
 	return file;
 }
@@ -3019,7 +3033,9 @@ idFile *idFileSystemLocal::OpenFileReadFlags( const char *relativePath, int sear
 	fileInPack_t *	pakFile;
 	directory_t *	dir;
 	int				hash;
+#if !defined(__vita__)
 	FILE *			fp;
+#endif
 
 	if ( !searchPaths ) {
 		common->FatalError( "Filesystem call made without initialization\n" );
@@ -3062,6 +3078,12 @@ idFile *idFileSystemLocal::OpenFileReadFlags( const char *relativePath, int sear
 
 	hash = HashFileName( relativePath );
 
+#if defined(__vita__)
+	// Prepared assets only exist below fs_savepath/current game.
+	const bool vitaPreparedCache = !idStr::Icmpn( relativePath, "texturecache/", 13 ) ||
+		!idStr::Icmpn( relativePath, "soundcache/", 11 );
+#endif
+
 	for ( search = searchPaths; search; search = search->next ) {
 		if ( search->dir && ( searchFlags & FSFLAG_SEARCH_DIRS ) ) {
 			// check a file in the directory tree
@@ -3076,6 +3098,14 @@ idFile *idFileSystemLocal::OpenFileReadFlags( const char *relativePath, int sear
 
 			dir = search->dir;
 
+#if defined(__vita__)
+			if ( vitaPreparedCache &&
+					( dir->path.Cmp( fs_savepath.GetString() ) ||
+					  dir->gamedir.Cmp( gameFolder ) ) ) {
+				continue;
+			}
+#endif
+
 			if(gamedir && strlen(gamedir)) {
 				if(dir->gamedir != gamedir) {
 					continue;
@@ -3083,19 +3113,37 @@ idFile *idFileSystemLocal::OpenFileReadFlags( const char *relativePath, int sear
 			}
 
 			netpath = BuildOSPath( dir->path, dir->gamedir, relativePath );
+#if defined(__vita__)
+			const SceUID nativeHandle = sceIoOpen( netpath, SCE_O_RDONLY, 0777 );
+			if ( nativeHandle < 0 ) {
+				continue;
+			}
+			SceIoStat nativeStat;
+			if ( sceIoGetstatByFd( nativeHandle, &nativeStat ) < 0 ||
+					nativeStat.st_size < 0 || nativeStat.st_size > 0x7fffffff ) {
+				sceIoClose( nativeHandle );
+				continue;
+			}
+#else
 			fp = OpenOSFileCorrectName( netpath, "rb" );
 			if ( !fp ) {
 				fp = fopen(relativePath, "rb");
 				if ( !fp )
 					continue;
 			}
+#endif
 
 			idFile_Permanent *file = new idFile_Permanent();
+#if defined(__vita__)
+			file->sceHandle = nativeHandle;
+			file->fileSize = (int)nativeStat.st_size;
+#else
 			file->o = fp;
+			file->fileSize = DirectFileLength( file->o );
+#endif
 			file->name = relativePath;
 			file->fullPath = netpath;
 			file->mode = ( 1 << FS_READ );
-			file->fileSize = DirectFileLength( file->o );
 			if ( fs_debug.GetInteger() ) {
 				common->Printf( "idFileSystem::OpenFileRead: %s (found in '%s/%s')\n", relativePath, dir->path.c_str(), dir->gamedir.c_str() );
 			}
@@ -3167,6 +3215,12 @@ idFile *idFileSystemLocal::OpenFileReadFlags( const char *relativePath, int sear
 
 			return file;
 		} else if ( search->pack && ( searchFlags & FSFLAG_SEARCH_PAKS ) ) {
+
+#if defined(__vita__)
+			if ( vitaPreparedCache ) {
+				continue;
+			}
+#endif
 
 			if ( !search->pack->hashTable[hash] ) {
 				continue;
@@ -3286,6 +3340,13 @@ idFile *idFileSystemLocal::OpenFileWrite( const char *relativePath, const char *
 	CreateOSPath( OSpath );
 
 	f = new idFile_Permanent();
+#if defined(__vita__)
+	f->sceHandle = sceIoOpen( OSpath, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777 );
+	if ( f->sceHandle < 0 ) {
+		delete f;
+		return NULL;
+	}
+#else
 	f->o = OpenOSFile( OSpath, "wb" );
 	if ( !f->o ) {
 		f->o = fopen(relativePath, "wb");
@@ -3294,6 +3355,7 @@ idFile *idFileSystemLocal::OpenFileWrite( const char *relativePath, const char *
 			return NULL;
 		}
 	}
+#endif
 	f->name = relativePath;
 	f->fullPath = OSpath;
 	f->mode = ( 1 << FS_WRITE );
@@ -3322,16 +3384,34 @@ idFile *idFileSystemLocal::OpenExplicitFileRead( const char *OSPath ) {
 	common->DPrintf( "idFileSystem::OpenExplicitFileRead - reading from: %s\n", OSPath );
 
 	f = new idFile_Permanent();
+#if defined(__vita__)
+	f->sceHandle = sceIoOpen( OSPath, SCE_O_RDONLY, 0777 );
+	if ( f->sceHandle < 0 ) {
+		delete f;
+		return NULL;
+	}
+	SceIoStat nativeStat;
+	if ( sceIoGetstatByFd( f->sceHandle, &nativeStat ) < 0 ||
+			nativeStat.st_size < 0 || nativeStat.st_size > 0x7fffffff ) {
+		delete f;
+		return NULL;
+	}
+#else
 	f->o = OpenOSFile( OSPath, "rb" );
 	if ( !f->o ) {
 		delete f;
 		return NULL;
 	}
+#endif
 	f->name = OSPath;
 	f->fullPath = OSPath;
 	f->mode = ( 1 << FS_READ );
 	f->handleSync = false;
+#if defined(__vita__)
+	f->fileSize = (int)nativeStat.st_size;
+#else
 	f->fileSize = DirectFileLength( f->o );
+#endif
 
 	return f;
 }
@@ -3356,11 +3436,19 @@ idFile *idFileSystemLocal::OpenExplicitFileWrite( const char *OSPath ) {
 	CreateOSPath( OSPath );
 
 	f = new idFile_Permanent();
+#if defined(__vita__)
+	f->sceHandle = sceIoOpen( OSPath, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777 );
+	if ( f->sceHandle < 0 ) {
+		delete f;
+		return NULL;
+	}
+#else
 	f->o = OpenOSFile( OSPath, "wb" );
 	if ( !f->o ) {
 		delete f;
 		return NULL;
 	}
+#endif
 	f->name = OSPath;
 	f->fullPath = OSPath;
 	f->mode = ( 1 << FS_WRITE );
@@ -3397,16 +3485,33 @@ idFile *idFileSystemLocal::OpenFileAppend( const char *relativePath, bool sync, 
 	}
 
 	f = new idFile_Permanent();
+#if defined(__vita__)
+	f->sceHandle = sceIoOpen( OSpath, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0777 );
+	if ( f->sceHandle < 0 ) {
+		delete f;
+		return NULL;
+	}
+	const SceOff nativeLength = sceIoLseek( f->sceHandle, 0, SCE_SEEK_END );
+	if ( nativeLength < 0 || nativeLength > 0x7fffffff ) {
+		delete f;
+		return NULL;
+	}
+#else
 	f->o = OpenOSFile( OSpath, "ab" );
 	if ( !f->o ) {
 		delete f;
 		return NULL;
 	}
+#endif
 	f->name = relativePath;
 	f->fullPath = OSpath;
 	f->mode = ( 1 << FS_WRITE ) + ( 1 << FS_APPEND );
 	f->handleSync = sync;
+#if defined(__vita__)
+	f->fileSize = (int)nativeLength;
+#else
 	f->fileSize = DirectFileLength( f->o );
+#endif
 
 	return f;
 }
@@ -3461,11 +3566,7 @@ size_t idFileSystemLocal::CurlWriteFunction( void *ptr, size_t size, size_t nmem
 	if ( !bgl->f ) {
 		return size * nmemb;
 	}
-	#ifdef _WIN32
-		return _write( _fileno(static_cast<idFile_Permanent*>(bgl->f)->GetFilePtr()), ptr, size * nmemb );
-	#else
-		return fwrite( ptr, size, nmemb, static_cast<idFile_Permanent*>(bgl->f)->GetFilePtr() );
-	#endif
+	return bgl->f->Write( ptr, (int)( size * nmemb ) );
 }
 
 /*
@@ -3508,12 +3609,7 @@ int BackgroundDownloadThread( void *pexit ) {
 		bgl->next = NULL;
 
 		if ( bgl->opcode == DLTYPE_FILE ) {
-			// use the low level read function, because fread may allocate memory
-			#if defined(WIN32)
-				_read( _fileno(static_cast<idFile_Permanent*>(bgl->f)->GetFilePtr()), bgl->file.buffer, bgl->file.length );
-			#else
-				fread(  bgl->file.buffer, bgl->file.length, 1, static_cast<idFile_Permanent*>(bgl->f)->GetFilePtr() );
-			#endif
+			bgl->f->Read( bgl->file.buffer, bgl->file.length );
 			bgl->completed = true;
 		} else {
 #ifdef ID_ENABLE_CURL
@@ -4076,7 +4172,7 @@ pack_t *idFileSystemLocal::LoadPSARCFile(const char *psarcPath) {
 	int numFiles = filePaths.Num();
 	if (numFiles == 0) {
 		common->Warning("LoadPSARCFile: no files found in %s", psarcPath);
-		sceFiosArchiveUnmountSync(NULL, mountHandle);
+		sceFiosArchiveUnmountSync(NULL, &mountHandle);
 		free(mountBuffer.pPtr);
 		return NULL;
 	}
@@ -4151,7 +4247,7 @@ idFile_InPSARC *idFileSystemLocal::ReadFileFromPSARC( pack_t *pak, fileInPack_t 
 
 void idFileSystemLocal::FreePSARCPack( pack_t *pak ) {
 	if ( pak->psarcHandle ) {
-		sceFiosArchiveUnmountSync( NULL, pak->psarcHandle );
+		sceFiosArchiveUnmountSync( NULL, &pak->psarcHandle );
 		pak->psarcHandle = 0;
 	}
 	if ( pak->psarcMountBuf ) {

@@ -219,6 +219,14 @@ private:
 	int						mode;			// open mode
 	int						fileSize;		// size of the file
 	FILE *					o;				// file handle
+#if defined(__vita__)
+	int					sceHandle;		// native sceIo handle, -1 for FILE-backed temporaries
+	enum { SCE_WRITE_BUFFER_SIZE = 64 * 1024 };
+	byte *					sceWriteBuffer;
+	int					sceWriteBufferUsed;
+	bool					sceWriteUnbuffered;
+	int					FlushSceWriteBuffer( void );
+#endif
 	bool					handleSync;		// true if written data is immediately flushed
 };
 
@@ -242,11 +250,17 @@ public:
 	virtual int				Seek( long offset, fsOrigin_t origin );
 
 private:
+	int						RawRead( void *buffer, int len );
+	enum { READ_BUFFER_SIZE = 64 * 1024 };
 	idStr					name;			// name of the file in the pak
 	idStr					fullPath;		// full file path including pak file name
 	ZPOS64_T				zipFilePos;		// zip file info position in pak
 	int						fileSize;		// size of the file
 	void *					z;				// unzip info
+	byte *					readBuffer;		// coalesces tiny typed reads used by AAS/models
+	int						readBufferStart;
+	int						readBufferLength;
+	int						logicalPos;
 };
 
 #ifdef __vita__

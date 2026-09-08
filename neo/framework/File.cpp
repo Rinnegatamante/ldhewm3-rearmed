@@ -32,6 +32,10 @@ If you have questions concerning this license or the applicable additional terms
 
 #include "framework/File.h"
 
+#if defined(__vita__)
+#include <vitasdk.h>
+#endif
+
 #define	MAX_PRINT_MSG		4096
 
 /*
@@ -1021,6 +1025,12 @@ idFile_Permanent::idFile_Permanent
 idFile_Permanent::idFile_Permanent( void ) {
 	name = "invalid";
 	o = NULL;
+#if defined(__vita__)
+	sceHandle = -1;
+	sceWriteBuffer = NULL;
+	sceWriteBufferUsed = 0;
+	sceWriteUnbuffered = false;
+#endif
 	mode = 0;
 	fileSize = 0;
 	handleSync = false;
@@ -1032,6 +1042,17 @@ idFile_Permanent::~idFile_Permanent
 =================
 */
 idFile_Permanent::~idFile_Permanent( void ) {
+#if defined(__vita__)
+	if ( sceHandle >= 0 ) {
+		FlushSceWriteBuffer();
+		sceIoClose( sceHandle );
+		sceHandle = -1;
+	}
+	if ( sceWriteBuffer ) {
+		Mem_Free( sceWriteBuffer );
+		sceWriteBuffer = NULL;
+	}
+#endif
 	if ( o ) {
 		fclose( o );
 	}
@@ -1055,17 +1076,31 @@ int idFile_Permanent::Read( void *buffer, int len ) {
 		return 0;
 	}
 
-	if ( !o ) {
+	if ( !o
+#if defined(__vita__)
+			&& sceHandle < 0
+#endif
+			) {
 		return 0;
 	}
 
 	buf = (byte *)buffer;
 
+#if defined(__vita__)
+	if ( sceHandle >= 0 && FlushSceWriteBuffer() < 0 ) {
+		return 0;
+	}
+#endif
+
 	remaining = len;
 	tries = 0;
 	while( remaining ) {
 		block = remaining;
+#if defined(__vita__)
+		read = sceHandle >= 0 ? (int)sceIoRead( sceHandle, buf, block ) : (int)fread( buf, 1, block, o );
+#else
 		read = fread( buf, 1, block, o );
+#endif
 		if ( read == 0 ) {
 			// we might have been trying to read from a CD, which
 			// sometimes returns a 0 read on windows
@@ -1107,11 +1142,56 @@ int idFile_Permanent::Write( const void *buffer, int len ) {
 		return 0;
 	}
 
-	if ( !o ) {
+	if ( !o
+#if defined(__vita__)
+			&& sceHandle < 0
+#endif
+			) {
 		return 0;
 	}
 
 	buf = (byte *)buffer;
+
+#if defined(__vita__)
+	if ( sceHandle >= 0 ) {
+		remaining = len;
+		while ( remaining > 0 ) {
+			if ( !sceWriteUnbuffered ) {
+				if ( !sceWriteBuffer ) {
+					sceWriteBuffer = static_cast<byte *>( Mem_Alloc( SCE_WRITE_BUFFER_SIZE ) );
+				}
+
+				if ( sceWriteBufferUsed > 0 || remaining < SCE_WRITE_BUFFER_SIZE ) {
+					const int available = SCE_WRITE_BUFFER_SIZE - sceWriteBufferUsed;
+					const int amount = Min( available, remaining );
+					memcpy( sceWriteBuffer + sceWriteBufferUsed, buf, amount );
+					sceWriteBufferUsed += amount;
+					remaining -= amount;
+					buf += amount;
+					fileSize += amount;
+					if ( sceWriteBufferUsed == SCE_WRITE_BUFFER_SIZE && FlushSceWriteBuffer() < 0 ) {
+						common->Printf( "idFile_Permanent::Write: failed flushing %s\n", name.c_str() );
+						return 0;
+					}
+					continue;
+				}
+			}
+
+			written = (int)sceIoWrite( sceHandle, buf, remaining );
+			if ( written <= 0 ) {
+				common->Printf( "idFile_Permanent::Write: %d bytes written to %s\n", written, name.c_str() );
+				return 0;
+			}
+			remaining -= written;
+			buf += written;
+			fileSize += written;
+		}
+		if ( handleSync ) {
+			Flush();
+		}
+		return len;
+	}
+#endif
 
 	remaining = len;
 	tries = 0;
@@ -1143,12 +1223,38 @@ int idFile_Permanent::Write( const void *buffer, int len ) {
 	return len;
 }
 
+#if defined(__vita__)
+int idFile_Permanent::FlushSceWriteBuffer( void ) {
+	int sent = 0;
+	while ( sent < sceWriteBufferUsed ) {
+		const int result = (int)sceIoWrite( sceHandle, sceWriteBuffer + sent, sceWriteBufferUsed - sent );
+		if ( result <= 0 ) {
+			if ( sent > 0 ) {
+				memmove( sceWriteBuffer, sceWriteBuffer + sent, sceWriteBufferUsed - sent );
+				sceWriteBufferUsed -= sent;
+			}
+			return -1;
+		}
+		sent += result;
+	}
+	sceWriteBufferUsed = 0;
+	return 0;
+}
+#endif
+
 /*
 =================
 idFile_Permanent::ForceFlush
 =================
 */
 void idFile_Permanent::ForceFlush( void ) {
+#if defined(__vita__)
+	if ( sceHandle >= 0 ) {
+		FlushSceWriteBuffer();
+		sceWriteUnbuffered = true;
+		return;
+	}
+#endif
 	setvbuf( o, NULL, _IONBF, 0 );
 }
 
@@ -1158,6 +1264,13 @@ idFile_Permanent::Flush
 =================
 */
 void idFile_Permanent::Flush( void ) {
+#if defined(__vita__)
+	if ( sceHandle >= 0 ) {
+		FlushSceWriteBuffer();
+		sceIoSyncByFd( sceHandle, 0 );
+		return;
+	}
+#endif
 	fflush( o );
 }
 
@@ -1167,6 +1280,12 @@ idFile_Permanent::Tell
 =================
 */
 int idFile_Permanent::Tell( void ) {
+#if defined(__vita__)
+	if ( sceHandle >= 0 ) {
+		const SceOff position = sceIoLseek( sceHandle, 0, SCE_SEEK_CUR );
+		return position < 0 ? -1 : (int)( position + sceWriteBufferUsed );
+	}
+#endif
 	return ftell( o );
 }
 
@@ -1185,6 +1304,15 @@ idFile_Permanent::Timestamp
 ================
 */
 ID_TIME_T idFile_Permanent::Timestamp( void ) {
+#if defined(__vita__)
+	if ( sceHandle >= 0 ) {
+		SceIoStat stat;
+		time_t value;
+		if ( sceIoGetstatByFd( sceHandle, &stat ) < 0 ||
+				sceRtcGetTime_t( &stat.st_mtime, &value ) < 0 ) return 0;
+		return (ID_TIME_T)value;
+	}
+#endif
 	return Sys_FileTimeStamp( o );
 }
 
@@ -1218,6 +1346,12 @@ int idFile_Permanent::Seek( long offset, fsOrigin_t origin ) {
 		}
 	}
 
+#if defined(__vita__)
+	if ( sceHandle >= 0 ) {
+		if ( FlushSceWriteBuffer() < 0 ) return -1;
+		return sceIoLseek( sceHandle, offset, _origin ) < 0 ? -1 : 0;
+	}
+#endif
 	return fseek( o, offset, _origin );
 }
 
@@ -1240,6 +1374,10 @@ idFile_InZip::idFile_InZip( void ) {
 	zipFilePos = 0;
 	fileSize = 0;
 	memset( &z, 0, sizeof( z ) );
+	readBuffer = NULL;
+	readBufferStart = 0;
+	readBufferLength = 0;
+	logicalPos = 0;
 }
 
 /*
@@ -1250,6 +1388,11 @@ idFile_InZip::~idFile_InZip
 idFile_InZip::~idFile_InZip( void ) {
 	unzCloseCurrentFile( z );
 	unzClose( z );
+	Mem_Free( readBuffer );
+}
+
+int idFile_InZip::RawRead( void *buffer, int len ) {
+	return unzReadCurrentFile( z, buffer, len );
 }
 
 /*
@@ -1260,9 +1403,54 @@ Properly handles partial reads
 =================
 */
 int idFile_InZip::Read( void *buffer, int len ) {
-	int l = unzReadCurrentFile( z, buffer, len );
-	fileSystem->AddToReadCount( l );
-	return l;
+	if ( len <= 0 ) {
+		return 0;
+	}
+
+	byte *out = static_cast<byte *>( buffer );
+	int total = 0;
+	while ( total < len ) {
+		const int bufferedOffset = logicalPos - readBufferStart;
+		if ( bufferedOffset >= 0 && bufferedOffset < readBufferLength ) {
+			const int available = readBufferLength - bufferedOffset;
+			const int take = Min( available, len - total );
+			memcpy( out + total, readBuffer + bufferedOffset, take );
+			logicalPos += take;
+			total += take;
+			continue;
+		}
+
+		readBufferLength = 0;
+		readBufferStart = logicalPos;
+		const int remaining = len - total;
+		if ( remaining >= READ_BUFFER_SIZE ) {
+			const int got = RawRead( out + total, remaining );
+			if ( got <= 0 ) {
+				if ( total == 0 && got < 0 ) {
+					return got;
+				}
+				break;
+			}
+			logicalPos += got;
+			total += got;
+			continue;
+		}
+
+		if ( !readBuffer ) {
+			readBuffer = static_cast<byte *>( Mem_Alloc( READ_BUFFER_SIZE ) );
+		}
+		const int got = RawRead( readBuffer, READ_BUFFER_SIZE );
+		if ( got <= 0 ) {
+			if ( total == 0 && got < 0 ) {
+				return got;
+			}
+			break;
+		}
+		readBufferLength = got;
+	}
+
+	fileSystem->AddToReadCount( total );
+	return total;
 }
 
 /*
@@ -1299,7 +1487,7 @@ idFile_InZip::Tell
 =================
 */
 int idFile_InZip::Tell( void ) {
-	return unztell( z );
+	return logicalPos;
 }
 
 /*
@@ -1330,38 +1518,52 @@ idFile_InZip::Seek
 #define ZIP_SEEK_BUF_SIZE	(1<<15)
 
 int idFile_InZip::Seek( long offset, fsOrigin_t origin ) {
-	int res, i;
-	char *buf;
-
+	long target;
 	switch( origin ) {
 		case FS_SEEK_END: {
-			offset = fileSize - offset;
+			target = fileSize - offset;
+			break;
 		}
 		case FS_SEEK_SET: {
-			// set the file position in the zip file (also sets the current file info)
-			unzSetOffset64(z, zipFilePos);
-			unzOpenCurrentFile( z );
-			if ( offset <= 0 ) {
-				return 0;
-			}
+			target = offset;
+			break;
 		}
 		case FS_SEEK_CUR: {
-			buf = (char *) _alloca16( ZIP_SEEK_BUF_SIZE );
-			for ( i = 0; i < ( offset - ZIP_SEEK_BUF_SIZE ); i += ZIP_SEEK_BUF_SIZE ) {
-				res = unzReadCurrentFile( z, buf, ZIP_SEEK_BUF_SIZE );
-				if ( res < ZIP_SEEK_BUF_SIZE ) {
-					return -1;
-				}
-			}
-			res = i + unzReadCurrentFile( z, buf, offset - i );
-			return ( res == offset ) ? 0 : -1;
+			target = logicalPos + offset;
+			break;
 		}
 		default: {
 			common->FatalError( "idFile_InZip::Seek: bad origin for %s\n", name.c_str() );
-			break;
+			return -1;
 		}
 	}
-	return -1;
+
+	if ( target < 0 || target > fileSize ) {
+		return -1;
+	}
+	if ( target >= readBufferStart && target <= readBufferStart + readBufferLength ) {
+		logicalPos = target;
+		return 0;
+	}
+
+	// Reopen deflate streams and discard data without exposing read-ahead through Tell().
+	unzSetOffset64( z, zipFilePos );
+	if ( unzOpenCurrentFile( z ) != UNZ_OK ) {
+		return -1;
+	}
+	readBufferStart = 0;
+	readBufferLength = 0;
+	logicalPos = 0;
+	char *scratch = static_cast<char *>( _alloca16( ZIP_SEEK_BUF_SIZE ) );
+	while ( logicalPos < target ) {
+		const int amount = Min( static_cast<int>( target - logicalPos ), ZIP_SEEK_BUF_SIZE );
+		const int got = RawRead( scratch, amount );
+		if ( got != amount ) {
+			return -1;
+		}
+		logicalPos += got;
+	}
+	return 0;
 }
 
 /*
