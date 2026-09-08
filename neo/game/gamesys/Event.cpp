@@ -783,7 +783,7 @@ void idEvent::RestoreTrace( idRestoreGame *savefile, trace_t &trace ) {
 	savefile->ReadFloat( trace.fraction );
 	savefile->ReadVec3( trace.endpos );
 	savefile->ReadMat3( trace.endAxis );
-	savefile->ReadInt( (int&)trace.c.type );
+	savefile->ReadEnum( trace.c.type );
 	savefile->ReadVec3( trace.c.point );
 	savefile->ReadVec3( trace.c.normal );
 	savefile->ReadFloat( trace.c.dist );

@@ -1624,7 +1624,7 @@ void idPhysics_Player::Restore( idRestoreGame *savefile ) {
 	savefile->ReadBool( ladder );
 	savefile->ReadVec3( ladderNormal );
 
-	savefile->ReadInt( (int &)waterLevel );
+	savefile->ReadEnum( waterLevel );
 	savefile->ReadInt( waterType );
 }
 

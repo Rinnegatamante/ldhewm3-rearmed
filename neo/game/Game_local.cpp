@@ -1362,7 +1362,7 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 	savegame.ReadBool( skipCinematic );
 
 	savegame.ReadBool( isMultiplayer );
-	savegame.ReadInt( (int &)gameType );
+	savegame.ReadEnum( gameType );
 
 	savegame.ReadInt( framenum );
 	savegame.ReadInt( previousTime );

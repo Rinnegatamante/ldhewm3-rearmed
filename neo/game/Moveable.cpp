@@ -800,7 +800,7 @@ void idExplodingBarrel::Restore( idRestoreGame *savefile ) {
 	savefile->ReadVec3( spawnOrigin );
 	savefile->ReadMat3( spawnAxis );
 
-	savefile->ReadInt( (int &)state );
+	savefile->ReadEnum( state );
 	savefile->ReadInt( (int &)particleModelDefHandle );
 	savefile->ReadInt( (int &)lightDefHandle );
 

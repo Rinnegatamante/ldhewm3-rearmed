@@ -3146,11 +3146,11 @@ void idAnimator::Restore( idRestoreGame *savefile ) {
 	jointMods.SetNum( num );
 	for( i = 0; i < num; i++ ) {
 		jointMods[ i ] = new jointMod_t;
-		savefile->ReadInt( (int&)jointMods[ i ]->jointnum );
+		savefile->ReadEnum( jointMods[ i ]->jointnum );
 		savefile->ReadMat3( jointMods[ i ]->mat );
 		savefile->ReadVec3( jointMods[ i ]->pos );
-		savefile->ReadInt( (int&)jointMods[ i ]->transform_pos );
-		savefile->ReadInt( (int&)jointMods[ i ]->transform_axis );
+		savefile->ReadEnum( jointMods[ i ]->transform_pos );
+		savefile->ReadEnum( jointMods[ i ]->transform_axis );
 	}
 
 	savefile->ReadInt( numJoints );
@@ -3180,7 +3180,7 @@ void idAnimator::Restore( idRestoreGame *savefile ) {
 	AFPoseJointMods.SetGranularity( 1 );
 	AFPoseJointMods.SetNum( num );
 	for ( i = 0; i < AFPoseJointMods.Num(); i++ ) {
-		savefile->ReadInt( (int&)AFPoseJointMods[i].mod );
+		savefile->ReadEnum( AFPoseJointMods[i].mod );
 		savefile->ReadMat3( AFPoseJointMods[i].axis );
 		savefile->ReadVec3( AFPoseJointMods[i].origin );
 	}

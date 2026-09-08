@@ -370,16 +370,16 @@ void idIK_Walk::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( numLegs );
 	savefile->ReadInt( enabledLegs );
 	for ( i = 0; i < MAX_LEGS; i++ )
-		savefile->ReadInt( (int&)footJoints[i] );
+		savefile->ReadEnum( footJoints[i] );
 	for ( i = 0; i < MAX_LEGS; i++ )
-		savefile->ReadInt( (int&)ankleJoints[i] );
+		savefile->ReadEnum( ankleJoints[i] );
 	for ( i = 0; i < MAX_LEGS; i++ )
-		savefile->ReadInt( (int&)kneeJoints[i] );
+		savefile->ReadEnum( kneeJoints[i] );
 	for ( i = 0; i < MAX_LEGS; i++ )
-		savefile->ReadInt( (int&)hipJoints[i] );
+		savefile->ReadEnum( hipJoints[i] );
 	for ( i = 0; i < MAX_LEGS; i++ )
-		savefile->ReadInt( (int&)dirJoints[i] );
-	savefile->ReadInt( (int&)waistJoint );
+		savefile->ReadEnum( dirJoints[i] );
+	savefile->ReadEnum( waistJoint );
 
 	for ( i = 0; i < MAX_LEGS; i++ )
 		savefile->ReadVec3( hipForward[i] );
@@ -925,13 +925,13 @@ void idIK_Reach::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( numArms );
 	savefile->ReadInt( enabledArms );
 	for ( i = 0; i <  MAX_ARMS; i++ )
-		savefile->ReadInt( (int&)handJoints[i] );
+		savefile->ReadEnum( handJoints[i] );
 	for ( i = 0; i <  MAX_ARMS; i++ )
-		savefile->ReadInt( (int&)elbowJoints[i] );
+		savefile->ReadEnum( elbowJoints[i] );
 	for ( i = 0; i <  MAX_ARMS; i++ )
-		savefile->ReadInt( (int&)shoulderJoints[i] );
+		savefile->ReadEnum( shoulderJoints[i] );
 	for ( i = 0; i <  MAX_ARMS; i++ )
-		savefile->ReadInt( (int&)dirJoints[i] );
+		savefile->ReadEnum( dirJoints[i] );
 
 	for ( i = 0; i <  MAX_ARMS; i++ )
 		savefile->ReadVec3( shoulderForward[i] );

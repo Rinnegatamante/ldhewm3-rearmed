@@ -928,7 +928,7 @@ idRestoreGame::ReadJoint
 ================
 */
 void idRestoreGame::ReadJoint( jointHandle_t &value ) {
-	file->ReadInt( (int&)value );
+	ReadEnum( value );
 }
 
 /*
@@ -1444,7 +1444,7 @@ idRestoreGame::ReadContactInfo
 ===================
 */
 void idRestoreGame::ReadContactInfo( contactInfo_t &contactInfo ) {
-	ReadInt( (int &)contactInfo.type );
+	ReadEnum( contactInfo.type );
 	ReadVec3( contactInfo.point );
 	ReadVec3( contactInfo.normal );
 	ReadFloat( contactInfo.dist );
@@ -1476,7 +1476,7 @@ void idRestoreGame::ReadTrace( trace_t &trace ) {
 void idRestoreGame::ReadTraceModel( idTraceModel &trace ) {
 	int j, k;
 
-	ReadInt( (int&)trace.type );
+	ReadEnum( trace.type );
 	ReadInt( trace.numVerts );
 	for ( j = 0; j < MAX_TRACEMODEL_VERTS; j++ ) {
 		ReadVec3( trace.verts[j] );

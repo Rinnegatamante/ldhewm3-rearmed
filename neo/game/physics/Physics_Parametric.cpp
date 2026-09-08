@@ -216,7 +216,7 @@ void idPhysics_Parametric_RestorePState( idRestoreGame *savefile, parametricPSta
 	savefile->ReadVec3( state.localOrigin );
 	savefile->ReadAngles( state.localAngles );
 
-	savefile->ReadInt( (int &)etype );
+	savefile->ReadEnum( etype );
 	savefile->ReadFloat( startTime );
 	savefile->ReadFloat( duration );
 	savefile->ReadVec3( linearStartValue );
@@ -225,7 +225,7 @@ void idPhysics_Parametric_RestorePState( idRestoreGame *savefile, parametricPSta
 
 	state.linearExtrapolation.Init( startTime, duration, linearStartValue, linearBaseSpeed, linearSpeed, etype );
 
-	savefile->ReadInt( (int &)etype );
+	savefile->ReadEnum( etype );
 	savefile->ReadFloat( startTime );
 	savefile->ReadFloat( duration );
 	savefile->ReadAngles( angularStartValue );

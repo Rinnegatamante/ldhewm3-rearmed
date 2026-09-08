@@ -116,6 +116,12 @@ public:
 
 	void					Read( void *buffer, int len );
 	void					ReadInt( int &value );
+	template< class type >
+	void					ReadEnum( type &value ) {
+		int intValue;
+		ReadInt( intValue );
+		value = static_cast<type>( intValue );
+	}
 	void					ReadJoint( jointHandle_t &value );
 	void					ReadShort( short &value );
 	void					ReadByte( byte &value );

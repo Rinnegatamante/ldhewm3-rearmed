@@ -256,7 +256,7 @@ idAFConstraint::Restore
 */
 void idAFConstraint::Restore( idRestoreGame *saveFile ) {
 	constraintType_t t;
-	saveFile->ReadInt( (int &)t );
+	saveFile->ReadEnum( t );
 	assert( t == type );
 }
 

@@ -388,7 +388,7 @@ idWeapon::Restore
 */
 void idWeapon::Restore( idRestoreGame *savefile ) {
 
-	savefile->ReadInt( (int &)status );
+	savefile->ReadEnum( status );
 	savefile->ReadObject( reinterpret_cast<idClass *&>( thread ) );
 	savefile->ReadString( state );
 	savefile->ReadString( idealState );

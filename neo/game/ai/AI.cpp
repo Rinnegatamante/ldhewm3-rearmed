@@ -111,9 +111,9 @@ idMoveState::Restore
 =====================
 */
 void idMoveState::Restore( idRestoreGame *savefile ) {
-	savefile->ReadInt( (int &)moveType );
-	savefile->ReadInt( (int &)moveCommand );
-	savefile->ReadInt( (int &)moveStatus );
+	savefile->ReadEnum( moveType );
+	savefile->ReadEnum( moveCommand );
+	savefile->ReadEnum( moveStatus );
 	savefile->ReadVec3( moveDest );
 	savefile->ReadVec3( moveDir );
 	goalEntity.Restore( savefile );

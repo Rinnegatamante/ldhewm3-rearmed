@@ -85,8 +85,8 @@ idForce_Field::Restore
 ================
 */
 void idForce_Field::Restore( idRestoreGame *savefile ) {
-	savefile->ReadInt( (int &)type );
-	savefile->ReadInt( (int &)applyType);
+	savefile->ReadEnum( type );
+	savefile->ReadEnum( applyType );
 	savefile->ReadFloat( magnitude );
 	savefile->ReadVec3( dir );
 	savefile->ReadFloat( randomTorque );

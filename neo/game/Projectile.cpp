@@ -165,7 +165,7 @@ void idProjectile::Restore( idRestoreGame *savefile ) {
 	savefile->ReadParticle( smokeFly );
 	savefile->ReadInt( smokeFlyTime );
 
-	savefile->ReadInt( (int &)state );
+	savefile->ReadEnum( state );
 
 	savefile->ReadFloat( damagePower );
 
