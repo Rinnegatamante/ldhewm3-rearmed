@@ -645,6 +645,7 @@ set(src_sys_base
     sys/posix/posix_net.cpp
     sys/posix/posix_main.cpp
     sys/linux/main.cpp
+    sys/vita_alloc.cpp
     )
 
 set(src_sys_core

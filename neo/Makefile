@@ -1,7 +1,10 @@
 TARGET		:= dhewm3
 TITLE		:= DHEWM3ES2
+.DEFAULT_GOAL := release
+VITAGL_LIB	?= -lvitaGL
+VITAGL_DEP	:= $(filter %.a,$(VITAGL_LIB))
 
-LIBS = -lopenal -lpthread -lvitaGL -lvitashark -lmathneon -lvorbisfile -lvorbis -logg  -lspeexdsp -lmpg123 \
+LIBS = -lopenal -lpthread $(VITAGL_LIB) -lvitashark -lmathneon -lvorbisfile -lvorbis -logg  -lspeexdsp -lmpg123 \
 	-lSDL2 -lc -lSceCommonDialog_stub -lSceAudio_stub -lSceLibKernel_stub -lSceShaccCg_stub -lz \
 	-lSceShaccCgExt -ltaihen_stub -lpng -lSceDisplay_stub -lSceGxm_stub -lSceFios2_stub \
 	-lSceCtrl_stub -lSceTouch_stub -lSceMotion_stub -lm -lSceAppMgr_stub \
@@ -298,10 +301,12 @@ GAMEOBJS = \
     game/physics/Push.o
 
 OBJS     := $(GAMEOBJS) $(FRAMEWORKOBJS) $(SYSOBJS) $(RENDEREROBJS) $(MISCOBJS) $(UIOBJS) $(IDLIBOBJS)
+DEPS     := $(OBJS:.o=.d)
 
 PREFIX  = arm-vita-eabi
 CC      = $(PREFIX)-gcc
 CXX      = $(PREFIX)-g++
+CPPFLAGS += -MMD -MP
 CFLAGS  = -fsigned-char -Wl,-q,--wrap,fopen,--wrap,opendir,--wrap,open,--wrap,access,--wrap,malloc,--wrap,memalign,--wrap,free,--wrap,calloc,--wrap,realloc \
 	-O3 -flto -g -fno-optimize-sibling-calls -DNODLL -DNOEFX -D__unix__ -DSDL_DISABLE_XMMINTRIN_H \
 	-ffast-math -mtune=cortex-a9 -mfpu=neon -DVITA -I. -Igame -D__SSE__  -D__SSE2__ -D__SSE3__ \
@@ -309,6 +314,8 @@ CFLAGS  = -fsigned-char -Wl,-q,--wrap,fopen,--wrap,opendir,--wrap,open,--wrap,ac
 	#-DNO_LIGHT
 CXXFLAGS  = $(CFLAGS) -std=gnu++11 -fpermissive
 ASFLAGS = $(CFLAGS)
+
+-include $(DEPS)
 
 release:
 	make clean
@@ -330,12 +337,12 @@ $(TARGET).vpk: $(TARGET).velf
 		$(TARGET).vpk
 
 %.velf: %.elf
-	cp $< $<.unstripped.elf
+	$(PREFIX)-objcopy $< $<.unstripped.elf
 	$(PREFIX)-strip -g $<
 	vita-elf-create $< $@
 
-$(TARGET).elf: $(OBJS)
-	$(CXX) $(CXXFLAGS) $^ $(LIBS) -o $@
+$(TARGET).elf: $(OBJS) $(VITAGL_DEP)
+	$(CXX) $(CXXFLAGS) $(OBJS) $(LIBS) -o $@
 
 clean:
-	@rm -rf $(TARGET).velf $(TARGET).elf $(OBJS) $(TARGET).elf.unstripped.elf $(TARGET).vpk build/eboot.bin ./param.sfo
+	@rm -rf $(TARGET).velf $(TARGET).elf $(OBJS) $(DEPS) $(TARGET).elf.unstripped.elf $(TARGET).vpk build/eboot.bin ./param.sfo

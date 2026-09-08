@@ -3,8 +3,10 @@
 *.velf
 *.elf
 *.o
+*.d
 *.vpk
 /build*
+/neo/build/
 *~
 .*.swp
 *.pyc
