@@ -1697,6 +1697,14 @@ void idSessionLocal::ExecuteMapChange( bool noFadeWipe ) {
 		if ( pct < 0.0f ) {
 			pct = 0.0f;
 		}
+#if defined(__vita__)
+		if ( pct < 1.0f ) {
+			guiLoading->SetStateFloat( "map_loading", 1.0f );
+			guiLoading->StateChanged( com_frameTime );
+			Sys_GenerateEvents();
+			UpdateScreen();
+		}
+#else
 		while ( pct < 1.0f ) {
 			guiLoading->SetStateFloat( "map_loading", pct );
 			guiLoading->StateChanged( com_frameTime );
@@ -1704,6 +1712,7 @@ void idSessionLocal::ExecuteMapChange( bool noFadeWipe ) {
 			UpdateScreen();
 			pct += 0.05f;
 		}
+#endif
 	}
 
 	// capture the current screen and start a wipe
