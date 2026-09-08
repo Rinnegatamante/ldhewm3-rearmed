@@ -1667,6 +1667,10 @@ avoid the fast pre-cache check associated with each entityDef
 ===================
 */
 void idGameLocal::CacheDictionaryMedia( const idDict *dict ) {
+	CacheDictionaryMedia( dict, false );
+}
+
+void idGameLocal::CacheDictionaryMedia( const idDict *dict, bool skipSpawnHandled ) {
 	const idKeyValue *kv;
 
 	if ( dict == NULL ) {
@@ -1682,7 +1686,9 @@ void idGameLocal::CacheDictionaryMedia( const idDict *dict ) {
 
 	kv = dict->MatchPrefix( "model" );
 	while( kv ) {
-		if ( kv->GetValue().Length() ) {
+		// idEntity::Spawn loads the primary render and collision model once.
+		const bool handledBySpawn = skipSpawnHandled && !idStr::Icmp( kv->GetKey(), "model" );
+		if ( kv->GetValue().Length() && !handledBySpawn ) {
 			declManager->MediaPrint( "Precaching model %s\n", kv->GetValue().c_str() );
 			// precache model/animations
 			if ( declManager->FindType( DECL_MODELDEF, kv->GetValue(), false ) == NULL ) {
@@ -1696,7 +1702,7 @@ void idGameLocal::CacheDictionaryMedia( const idDict *dict ) {
 	}
 
 	kv = dict->FindKey( "s_shader" );
-	if ( kv && kv->GetValue().Length() ) {
+	if ( kv && kv->GetValue().Length() && !skipSpawnHandled ) {
 		declManager->FindType( DECL_SOUND, kv->GetValue() );
 	}
 
@@ -1711,7 +1717,11 @@ void idGameLocal::CacheDictionaryMedia( const idDict *dict ) {
 
 	kv = dict->MatchPrefix( "gui", NULL );
 	while( kv ) {
-		if ( kv->GetValue().Length() ) {
+		const bool handledBySpawn = skipSpawnHandled &&
+			( !idStr::Icmp( kv->GetKey(), "gui" ) ||
+			  !idStr::Icmp( kv->GetKey(), "gui2" ) ||
+			  !idStr::Icmp( kv->GetKey(), "gui3" ) );
+		if ( kv->GetValue().Length() && !handledBySpawn ) {
 			if ( !idStr::Icmp( kv->GetKey(), "gui_noninteractive" )
 				|| !idStr::Icmpn( kv->GetKey(), "gui_parm", 8 )
 				|| !idStr::Icmp( kv->GetKey(), "gui_inventory" ) ) {
@@ -1783,7 +1793,8 @@ void idGameLocal::CacheDictionaryMedia( const idDict *dict ) {
 
 	kv = dict->MatchPrefix( "skin", NULL );
 	while( kv ) {
-		if ( kv->GetValue().Length() ) {
+		const bool handledBySpawn = skipSpawnHandled && !idStr::Icmp( kv->GetKey(), "skin" );
+		if ( kv->GetValue().Length() && !handledBySpawn ) {
 			declManager->MediaPrint( "Precaching skin %s\n", kv->GetValue().c_str() );
 			declManager->FindType( DECL_SKIN, kv->GetValue() );
 		}
@@ -3054,22 +3065,24 @@ bool idGameLocal::SpawnEntityDef( const idDict &args, idEntity **ent, bool setDe
 		*ent = NULL;
 	}
 
-	spawnArgs = args;
+	const idDeclEntityDef *def;
+	{
+		spawnArgs = args;
 
-	if ( spawnArgs.GetString( "name", "", &name ) ) {
-		sprintf( error, " on '%s'", name);
+		if ( spawnArgs.GetString( "name", "", &name ) ) {
+			sprintf( error, " on '%s'", name);
+		}
+
+		spawnArgs.GetString( "classname", NULL, &classname );
+		def = FindEntityDef( classname, false );
+
+		if ( !def ) {
+			Warning( "Unknown classname '%s'%s.", classname, error.c_str() );
+			return false;
+		}
+
+		spawnArgs.SetDefaults( &def->dict );
 	}
-
-	spawnArgs.GetString( "classname", NULL, &classname );
-
-	const idDeclEntityDef *def = FindEntityDef( classname, false );
-
-	if ( !def ) {
-		Warning( "Unknown classname '%s'%s.", classname, error.c_str() );
-		return false;
-	}
-
-	spawnArgs.SetDefaults( &def->dict );
 
 	// check if we should spawn a class object
 	spawnArgs.GetString( "spawnclass", NULL, &spawn );
@@ -3085,6 +3098,11 @@ bool idGameLocal::SpawnEntityDef( const idDict &args, idEntity **ent, bool setDe
 		if ( !obj ) {
 			Warning( "Could not spawn '%s'. Instance could not be created%s.", classname, error.c_str() );
 			return false;
+		}
+
+		// Avoid resolving the same entityDef again in idEntity::Spawn.
+		if ( obj->IsType( idEntity::Type ) ) {
+			static_cast<idEntity *>(obj)->entityDefNumber = def->Index();
 		}
 
 		obj->CallSpawn();
@@ -3144,7 +3162,7 @@ const idDict *idGameLocal::FindEntityDefDict( const char *name, bool makeDefault
 idGameLocal::InhibitEntitySpawn
 ================
 */
-bool idGameLocal::InhibitEntitySpawn( idDict &spawnArgs ) {
+bool idGameLocal::InhibitEntitySpawn( const idDict &spawnArgs ) {
 
 	bool result = false;
 
@@ -3219,7 +3237,7 @@ void idGameLocal::SpawnMapEntities( void ) {
 	int			inhibit;
 	idMapEntity	*mapEnt;
 	int			numEntities;
-	idDict		args;
+	idDict		worldArgs;
 
 	Printf( "Spawning entities\n" );
 
@@ -3238,9 +3256,10 @@ void idGameLocal::SpawnMapEntities( void ) {
 	// the worldspawn is a special that performs any global setup
 	// needed by a level
 	mapEnt = mapFile->GetEntity( 0 );
-	args = mapEnt->epairs;
-	args.SetInt( "spawn_entnum", ENTITYNUM_WORLD );
-	if ( !SpawnEntityDef( args ) || !entities[ ENTITYNUM_WORLD ] || !entities[ ENTITYNUM_WORLD ]->IsType( idWorldspawn::Type ) ) {
+	worldArgs = mapEnt->epairs;
+	worldArgs.SetInt( "spawn_entnum", ENTITYNUM_WORLD );
+	bool worldSpawned = SpawnEntityDef( worldArgs );
+	if ( !worldSpawned || !entities[ ENTITYNUM_WORLD ] || !entities[ ENTITYNUM_WORLD ]->IsType( idWorldspawn::Type ) ) {
 		Error( "Problem spawning world entity" );
 	}
 
@@ -3249,12 +3268,11 @@ void idGameLocal::SpawnMapEntities( void ) {
 
 	for ( i = 1 ; i < numEntities ; i++ ) {
 		mapEnt = mapFile->GetEntity( i );
-		args = mapEnt->epairs;
+		const idDict &args = mapEnt->epairs;
 
 		if ( !InhibitEntitySpawn( args ) ) {
 			// precache any media specified in the map entity
-			CacheDictionaryMedia( &args );
-
+			CacheDictionaryMedia( &args, true );
 			SpawnEntityDef( args );
 			num++;
 		} else {

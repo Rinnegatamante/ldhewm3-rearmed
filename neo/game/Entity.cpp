@@ -465,18 +465,25 @@ void idEntity::Spawn( void ) {
 	const char			*classname;
 	const char			*scriptObjectName;
 
-	gameLocal.RegisterEntity( this );
+	{
+		gameLocal.RegisterEntity( this );
 
-	spawnArgs.GetString( "classname", NULL, &classname );
-	const idDeclEntityDef *def = gameLocal.FindEntityDef( classname, false );
-	if ( def ) {
-		entityDefNumber = def->Index();
+		// SpawnEntityDef seeds the index; SpawnEntityType callers still need this fallback.
+		if ( entityDefNumber < 0 ) {
+			spawnArgs.GetString( "classname", NULL, &classname );
+			const idDeclEntityDef *def = gameLocal.FindEntityDef( classname, false );
+			if ( def ) {
+				entityDefNumber = def->Index();
+			}
+		}
+
+		FixupLocalizedStrings();
 	}
 
-	FixupLocalizedStrings();
-
 	// parse static models the same way the editor display does
-	gameEdit->ParseSpawnArgsToRenderEntity( &spawnArgs, &renderEntity );
+	{
+		gameEdit->ParseSpawnArgsToRenderEntity( &spawnArgs, &renderEntity );
+	}
 
 	renderEntity.entityNum = entityNumber;
 
@@ -487,7 +494,9 @@ void idEntity::Spawn( void ) {
 	axis = renderEntity.axis;
 
 	// do the audio parsing the same way dmap and the editor do
-	gameEdit->ParseSpawnArgsToRefSound( &spawnArgs, &refSound );
+	{
+		gameEdit->ParseSpawnArgsToRefSound( &spawnArgs, &refSound );
+	}
 
 	// only play SCHANNEL_PRIVATE when sndworld->PlaceListener() is called with this listenerId
 	// don't spatialize sounds from the same entity
@@ -543,14 +552,16 @@ void idEntity::Spawn( void ) {
 
 	health = spawnArgs.GetInt( "health" );
 
-	InitDefaultPhysics( origin, axis );
-
-	SetOrigin( origin );
-	SetAxis( axis );
+	{
+		InitDefaultPhysics( origin, axis );
+	}
 
 	temp = spawnArgs.GetString( "model" );
 	if ( temp && *temp ) {
 		SetModel( temp );
+	} else {
+		// InitDefaultPhysics already installed origin and axis on the default physics object.
+		UpdateVisuals();
 	}
 
 	if ( spawnArgs.GetString( "bind", "", &temp ) ) {

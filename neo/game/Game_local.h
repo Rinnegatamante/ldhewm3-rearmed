@@ -512,7 +512,8 @@ private:
 
 	void					Clear( void );
 							// returns true if the entity shouldn't be spawned at all in this game type or difficulty level
-	bool					InhibitEntitySpawn( idDict &spawnArgs );
+	bool					InhibitEntitySpawn( const idDict &spawnArgs );
+	void					CacheDictionaryMedia( const idDict *dict, bool skipSpawnHandled );
 							// spawn entities from the map file
 	void					SpawnMapEntities( void );
 							// commons used by init, shutdown, and restart
