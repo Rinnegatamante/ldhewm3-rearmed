@@ -1497,6 +1497,7 @@ idImage	*idImageManager::ImageFromFile( const char *_name, textureFilter_t filte
 
 			image->allowDownSize = allowDownSize;
 			image->depth = depth;
+			image->preparedCacheName.Clear();
 			image->levelLoadReferenced = true;
 			
 

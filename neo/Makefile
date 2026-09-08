@@ -216,6 +216,7 @@ FRAMEWORKOBJS = \
     framework/UsercmdGen.o \
     framework/Session_menu.o \
     framework/Session.o \
+    framework/PreparedCachePack.o \
     framework/async/AsyncClient.o \
     framework/async/AsyncNetwork.o \
     framework/async/AsyncServer.o \

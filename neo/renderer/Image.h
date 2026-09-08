@@ -171,7 +171,8 @@ public:
 	// FIXME: should we implement cinematics this way, instead of with explicit calls?
 	void		GenerateImage( const byte *pic, int width, int height,
 	                           textureFilter_t filter, bool allowDownSize,
-	                           textureRepeat_t repeat, textureDepth_t depth );
+	                           textureRepeat_t repeat, textureDepth_t depth,
+	                           const char *preparedCacheName = NULL );
 	void		GenerateCubeImage( const byte *pic[6], int size,
 	                               textureFilter_t filter, bool allowDownSize,
 	                               textureDepth_t depth );
@@ -206,6 +207,7 @@ public:
 	void		GetDownsize( int &scaled_width, int &scaled_height ) const;
 	void		MakeDefault();	// fill with a grid pattern
 	void		SetImageFilterAndRepeat() const;
+	const char *PreparedCachePath();
 	void		ActuallyLoadImage( bool fromBind );
 	int			BitsForInternalFormat( int internalFormat ) const;
 	void		UploadCompressedNormalMap( int width, int height, const byte *rgba, int mipLevel );
@@ -226,6 +228,7 @@ public:
 
 	// parameters that define this image
 	idStr				imgName;				// game path, including extension (except for cube maps), may be an image program
+	idStr				preparedCacheName;		// stable v2 key retained if image-program parsing changes depth
 	void				(*generatorFunction)( idImage *image );	// NULL for files
 	bool				allowDownSize;			// this also doubles as a don't-partially-load flag
 	textureFilter_t		filter;
@@ -272,6 +275,7 @@ ID_INLINE idImage::idImage() {
 	bgl.f = NULL;
 	bglNext = NULL;
 	imgName[0] = '\0';
+	preparedCacheName.Clear();
 	generatorFunction = NULL;
 	allowDownSize = false;
 	filter = TF_DEFAULT;

@@ -257,3 +257,10 @@ unsigned int MD4_BlockChecksum( const void *data, int length ) {
 
 	return val;
 }
+
+void MD4_BlockDigest( const void *data, int length, unsigned char digest[16] ) {
+	MD4_CTX ctx;
+	MD4_Init( &ctx );
+	MD4_Update( &ctx, (unsigned char *)data, length );
+	MD4_Final( &ctx, digest );
+}

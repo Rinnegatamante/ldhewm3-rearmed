@@ -27,9 +27,11 @@ If you have questions concerning this license or the applicable additional terms
 */
 
 #include "sys/platform.h"
+#include "framework/PreparedCachePack.h"
 #include "framework/FileSystem.h"
 
 #include "sound/snd_local.h"
+#include "sound/Sound_cache.h"
 
 #define USE_SOUND_CACHE_ALLOCATOR
 
@@ -423,6 +425,115 @@ ID_TIME_T idSoundSample::GetNewTimeStamp( void ) const {
 	return timestamp;
 }
 
+#if defined(__vita__)
+static bool PreparedSoundCacheName( const idSoundSample *sample, char *path, size_t pathSize ) {
+	return S_PreparedSoundCacheName( sample->name.c_str(),
+		idSoundSystemLocal::s_force22kHz.GetBool(),
+		idSoundSystemLocal::s_realTimeDecoding.GetBool(),
+		idSoundSystemLocal::s_decompressionLimit.GetInteger(), path, pathSize );
+}
+
+static bool LoadPreparedSound( idSoundSample *sample ) {
+	char cacheName[128];
+	if ( !PreparedSoundCacheName( sample, cacheName, sizeof(cacheName) ) ) {
+		return false;
+	}
+
+	unsigned char header[PREPARED_SOUND_HEADER_SIZE];
+	preparedSoundInfo_t info;
+	byte *data = NULL;
+	bool migrateLegacy = false;
+	bool legacyCorrupt = false;
+	unsigned char *packedContents = NULL;
+	int packedLength = 0;
+	if ( PreparedCachePack_Read(PREPARED_CACHE_PACK_SOUND, cacheName,
+			&packedContents, &packedLength) ) {
+		if ( packedLength >= PREPARED_SOUND_HEADER_SIZE &&
+				S_ParsePreparedSoundHeader(packedContents, packedLength, &info) ) {
+			data = (byte *)soundCacheAllocator.Alloc( (int)info.objectMemSize );
+			if ( data ) memcpy(data, packedContents + PREPARED_SOUND_HEADER_SIZE, info.objectMemSize);
+		}
+		free(packedContents);
+	}
+	if ( !data ) {
+		idFile *file = fileSystem->OpenFileRead( cacheName, false );
+		if ( file ) {
+			const bool validHeader = file->Read( header, sizeof(header) ) == sizeof(header) &&
+				S_ParsePreparedSoundHeader( header, (unsigned int)file->Length(), &info );
+			if ( validHeader ) {
+				data = (byte *)soundCacheAllocator.Alloc( (int)info.objectMemSize );
+				if ( data && file->Read(data, (int)info.objectMemSize) == (int)info.objectMemSize ) {
+					migrateLegacy = true;
+				} else if ( data ) {
+					soundCacheAllocator.Free(data);
+					data = NULL;
+					legacyCorrupt = true;
+				}
+			} else {
+				legacyCorrupt = true;
+			}
+			fileSystem->CloseFile(file);
+			if ( legacyCorrupt ) fileSystem->RemoveFile(cacheName);
+		}
+	}
+	if ( !data ) {
+		return false;
+	}
+	if ( migrateLegacy ) {
+		S_BuildPreparedSoundHeader(header, info);
+		PreparedCachePack_Write(PREPARED_CACHE_PACK_SOUND, cacheName,
+			header, sizeof(header), data, info.objectMemSize);
+	}
+
+	memset( &sample->objectInfo, 0, sizeof(sample->objectInfo) );
+	sample->objectInfo.wFormatTag = (word)info.formatTag;
+	sample->objectInfo.nChannels = (word)info.channels;
+	sample->objectInfo.nSamplesPerSec = info.samplesPerSec;
+	sample->objectInfo.nAvgBytesPerSec = info.avgBytesPerSec;
+	sample->objectInfo.nBlockAlign = (word)info.blockAlign;
+	sample->objectInfo.wBitsPerSample = (word)info.bitsPerSample;
+	sample->objectInfo.cbSize = (word)info.extraSize;
+	sample->objectSize = (int)info.objectSize;
+	sample->objectMemSize = (int)info.objectMemSize;
+	sample->nonCacheData = data;
+	sample->timestamp = 0;
+	return true;
+}
+
+static void WritePreparedSound( const idSoundSample *sample ) {
+	char cacheName[128];
+	if ( !sample->nonCacheData || sample->objectMemSize <= 0 ||
+			!PreparedSoundCacheName( sample, cacheName, sizeof(cacheName) ) ) return;
+
+	preparedSoundInfo_t info;
+	info.formatTag = sample->objectInfo.wFormatTag;
+	info.channels = sample->objectInfo.nChannels;
+	info.samplesPerSec = sample->objectInfo.nSamplesPerSec;
+	info.avgBytesPerSec = sample->objectInfo.nAvgBytesPerSec;
+	info.blockAlign = sample->objectInfo.nBlockAlign;
+	info.bitsPerSample = sample->objectInfo.wBitsPerSample;
+	info.extraSize = sample->objectInfo.cbSize;
+	info.objectSize = sample->objectSize;
+	info.objectMemSize = sample->objectMemSize;
+	if ( info.objectMemSize > PREPARED_SOUND_MAX_DATA_SIZE ) return;
+
+	unsigned char header[PREPARED_SOUND_HEADER_SIZE];
+	S_BuildPreparedSoundHeader( header, info );
+	if ( PreparedCachePack_Write(PREPARED_CACHE_PACK_SOUND, cacheName,
+			header, sizeof(header), sample->nonCacheData, sample->objectMemSize) ) return;
+	idFile *file = fileSystem->OpenFileWrite( cacheName, "fs_savepath" );
+	if ( !file ) {
+		return;
+	}
+	const bool ok = file->Write( header, sizeof(header) ) == sizeof(header) &&
+		file->Write( sample->nonCacheData, sample->objectMemSize ) == sample->objectMemSize;
+	fileSystem->CloseFile( file );
+	if ( !ok ) {
+		fileSystem->RemoveFile( cacheName );
+	}
+}
+#endif
+
 /*
 ===================
 idSoundSample::Load
@@ -435,54 +546,76 @@ void idSoundSample::Load( void ) {
 	purged = false;
 	hardwareBuffer = false;
 
-	timestamp = GetNewTimeStamp();
+	bool prepared = false;
+#if defined(__vita__)
+	prepared = LoadPreparedSound( this );
+#endif
 
-	if ( timestamp == FILE_NOT_FOUND_TIMESTAMP ) {
-		common->Warning( "Couldn't load sound '%s' using default", name.c_str() );
-		MakeDefault();
-		return;
-	}
-
-	// load it
 	idWaveFile	fh;
-	waveformatex_t info;
+	if ( !prepared ) {
+		timestamp = GetNewTimeStamp();
 
-	if ( fh.Open( name, &info ) == -1 ) {
-		common->Warning( "Couldn't load sound '%s' using default", name.c_str() );
-		MakeDefault();
-		return;
-	}
+		if ( timestamp == FILE_NOT_FOUND_TIMESTAMP ) {
+			common->Warning( "Couldn't load sound '%s' using default", name.c_str() );
+			MakeDefault();
+			return;
+		}
 
-	if ( info.nChannels != 1 && info.nChannels != 2 ) {
-		common->Warning( "idSoundSample: %s has %i channels, using default", name.c_str(), info.nChannels );
+		waveformatex_t info;
+		if ( fh.Open( name, &info ) == -1 ) {
+			common->Warning( "Couldn't load sound '%s' using default", name.c_str() );
+			MakeDefault();
+			return;
+		}
+
+		if ( info.nChannels != 1 && info.nChannels != 2 ) {
+			common->Warning( "idSoundSample: %s has %i channels, using default", name.c_str(), info.nChannels );
+			fh.Close();
+			MakeDefault();
+			return;
+		}
+
+		if ( info.wBitsPerSample != 16 ) {
+			common->Warning( "idSoundSample: %s is %dbits, expected 16bits using default", name.c_str(), info.wBitsPerSample );
+			fh.Close();
+			MakeDefault();
+			return;
+		}
+
+		if ( info.nSamplesPerSec != 44100 && info.nSamplesPerSec != 22050 && info.nSamplesPerSec != 11025 ) {
+			common->Warning( "idSoundCache: %s is %dHz, expected 11025, 22050 or 44100 Hz. Using default", name.c_str(), info.nSamplesPerSec );
+			fh.Close();
+			MakeDefault();
+			return;
+		}
+
+		objectInfo = info;
+		objectSize = fh.GetOutputSize();
+		objectMemSize = fh.GetMemorySize();
+		if ( objectMemSize <= 0 ) {
+			common->Warning( "idSoundCache: invalid data size %d for %s", objectMemSize, name.c_str() );
+			fh.Close();
+			MakeDefault();
+			return;
+		}
+
+		nonCacheData = (byte *)soundCacheAllocator.Alloc( objectMemSize );
+		if ( !nonCacheData || fh.Read( nonCacheData, objectMemSize, NULL ) != objectMemSize ) {
+			if ( nonCacheData ) soundCacheAllocator.Free( nonCacheData );
+			nonCacheData = NULL;
+			fh.Close();
+			common->Warning( "idSoundCache: short read loading %s", name.c_str() );
+			MakeDefault();
+			return;
+		}
+
+		// Cache the representation after optional downsampling, before OpenAL upload.
+		CheckForDownSample();
 		fh.Close();
-		MakeDefault();
-		return;
+#if defined(__vita__)
+		WritePreparedSound( this );
+#endif
 	}
-
-	if ( info.wBitsPerSample != 16 ) {
-		common->Warning( "idSoundSample: %s is %dbits, expected 16bits using default", name.c_str(), info.wBitsPerSample );
-		fh.Close();
-		MakeDefault();
-		return;
-	}
-
-	if ( info.nSamplesPerSec != 44100 && info.nSamplesPerSec != 22050 && info.nSamplesPerSec != 11025 ) {
-		common->Warning( "idSoundCache: %s is %dHz, expected 11025, 22050 or 44100 Hz. Using default", name.c_str(), info.nSamplesPerSec );
-		fh.Close();
-		MakeDefault();
-		return;
-	}
-
-	objectInfo = info;
-	objectSize = fh.GetOutputSize();
-	objectMemSize = fh.GetMemorySize();
-
-	nonCacheData = (byte *)soundCacheAllocator.Alloc( objectMemSize );
-	fh.Read( nonCacheData, objectMemSize, NULL );
-
-	// optionally convert it to 22kHz to save memory
-	CheckForDownSample();
 
 	// create hardware audio buffers
 	// PCM loads directly
@@ -562,7 +695,6 @@ void idSoundSample::Load( void ) {
 		}
 	}
 
-	fh.Close();
 }
 
 /*

@@ -422,6 +422,7 @@ set(src_framework
     framework/UsercmdGen.cpp
     framework/Session_menu.cpp
     framework/Session.cpp
+    framework/PreparedCachePack.cpp
     framework/async/AsyncClient.cpp
     framework/async/AsyncNetwork.cpp
     framework/async/AsyncServer.cpp

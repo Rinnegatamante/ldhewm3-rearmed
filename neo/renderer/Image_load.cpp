@@ -27,11 +27,13 @@ If you have questions concerning this license or the applicable additional terms
 */
 
 #include "sys/platform.h"
+#include "framework/PreparedCachePack.h"
 #include "idlib/hashing/MD4.h"
 #include "renderer/tr_local.h"
 #include "renderer/Cinematic.h"
 
 #include "renderer/Image.h"
+#include "renderer/Image_cache.h"
 
 #ifdef __vita__
 #include <vitasdk.h>
@@ -278,8 +280,56 @@ static int isopaque(GLint width, GLint height, const GLvoid *pixels) {
 	return 1;
 }
 
+static bool PreparedTextureCacheName( const idImage *image, char *path, size_t pathSize ) {
+	const int options[] = {
+		(int)image->depth, (int)image->repeat, (int)image->allowDownSize,
+		globalImages->image_roundDown.GetInteger(),
+		globalImages->image_downSize.GetInteger(),
+		globalImages->image_forceDownSize.GetInteger(),
+		globalImages->image_downSizeSpecular.GetInteger(),
+		globalImages->image_downSizeSpecularLimit.GetInteger(),
+		globalImages->image_downSizeBump.GetInteger(),
+		globalImages->image_downSizeBumpLimit.GetInteger(),
+		globalImages->image_downSizeLimit.GetInteger(),
+		globalImages->image_colorMipLevels.GetInteger(),
+		glConfig.maxTextureSize
+	};
+	return R_PreparedTextureCacheName(image->imgName.c_str(), options,
+		sizeof(options) / sizeof(options[0]), path, pathSize);
+}
+
+const char *idImage::PreparedCachePath() {
+	if ( cinematic || generatorFunction || cubeFiles != CF_2D ||
+			!r_useETC1.GetBool() || !r_useETC1Cache.GetBool() ) return NULL;
+	if ( preparedCacheName.IsEmpty() ) {
+		char path[MAX_IMAGE_NAME];
+		if ( PreparedTextureCacheName(this, path, sizeof(path)) ) {
+			preparedCacheName = path;
+		}
+	}
+	return preparedCacheName.IsEmpty() ? NULL : preparedCacheName.c_str();
+}
+
+static void WriteTextureCache( const char *name, byte tag, int depth, int width,
+		int height, const void *data, int size ) {
+	if ( !name || !name[0] || !r_useETC1Cache.GetBool() ) return;
+	byte header[PREPARED_TEXTURE_HEADER_SIZE];
+	R_BuildPreparedTextureHeader(header, tag, depth, width, height, size);
+#if defined(__vita__)
+	if ( PreparedCachePack_Write(PREPARED_CACHE_PACK_TEXTURE, name,
+			header, sizeof(header), data, size) ) return;
+#endif
+	idFile *file = fileSystem->OpenFileWrite(name, "fs_savepath");
+	if ( !file ) return;
+	bool ok = file->Write(header, sizeof(header)) == sizeof(header) &&
+		file->Write(data, size) == size;
+	fileSystem->CloseFile(file);
+	if ( !ok ) fileSystem->RemoveFile(name);
+}
+
 void rgba4444_convert_tex_image(
     char* cachefname,
+    int cacheDepth,
     GLenum target,
     GLint level,
     GLenum internalformat,
@@ -290,9 +340,7 @@ void rgba4444_convert_tex_image(
     GLenum type,
     const GLvoid *pixels) {
 	unsigned char const *cpixels = (unsigned char const *)pixels;
-	unsigned short *rgba4444data = (unsigned short *)malloc(2*width*height+1);
-	((unsigned char*)rgba4444data)[0]=1;
-	rgba4444data=(unsigned short *)((unsigned char*)rgba4444data+1);
+	unsigned short *rgba4444data = (unsigned short *)malloc(2*width*height);
 	int i;
 	for (i = 0; i < width * height; i++) {
 		unsigned char r,g,b,a;
@@ -303,10 +351,8 @@ void rgba4444_convert_tex_image(
 		rgba4444data[i] = r << 12 | g << 8 | b << 4 | a;
 	}
 	qglTexImage2D(target, level, format, width, height,border,format,GL_UNSIGNED_SHORT_4_4_4_4,rgba4444data);
-	rgba4444data=(unsigned short *)((unsigned char*)rgba4444data-1);
-	if (cachefname!=0) {
-		fileSystem->WriteFile(cachefname, rgba4444data, width*height*2+1);
-	}
+	WriteTextureCache(cachefname, 1, cacheDepth, width, height,
+		rgba4444data, width*height*2);
 	free(rgba4444data);
 }
 //#define USE_RG_ETC1
@@ -322,6 +368,7 @@ inline __attribute__((always_inline)) unsigned int etc1_data_size(unsigned int w
 
 void etc1_compress_tex_image(
     char* cachefname,
+    int cacheDepth,
     GLenum target,
     GLint level,
     GLenum internalformat,
@@ -334,9 +381,7 @@ void etc1_compress_tex_image(
 	unsigned char const *cpixels = (unsigned char const *)pixels;
 	unsigned char *etc1data;
 	unsigned int size=etc1_data_size(width,height);
-	etc1data = (unsigned char *)malloc(size+1);
-	etc1data[0]=0;
-	etc1data++;
+	etc1data = (unsigned char *)malloc(size);
 #ifdef USE_RG_ETC1
 	rg_etc1::etc1_encode_image(cpixels, width, height,
 	                           4, width*4, etc1data);
@@ -353,84 +398,89 @@ void etc1_compress_tex_image(
 	    0,
 	    size,
 	    etc1data);
-	etc1data--;
-	if (cachefname!=0) {
-		fileSystem->WriteFile(cachefname, etc1data, size+1);
-	}
+	WriteTextureCache(cachefname, 0, cacheDepth, width, height, etc1data, size);
 	free(etc1data);
 }
 
-inline __attribute__((always_inline)) int etcavail(char* cachefname) {
-#ifdef __vita__
-	return sceIoOpen(cachefname, SCE_O_RDONLY, 0777);
-#else
-	return (r_useETC1Cache.GetBool())&&(r_useETC1.GetBool())&&(cachefname!=0)&&(fileSystem->ReadFile(cachefname,0,0)!=-1);
-#endif
-}
-
-#ifdef __vita__
-char etc_buffer[256 * 1024];
-#endif
-
-int uploadetc(char* cachefname,GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type) {
-	char* tmp;
-	
-	int ret = etcavail( cachefname );
-#ifdef __vita__
-	if (ret < 0)
-#else
-	if (!ret)
-#endif
-		return 1;
-
-#ifdef __vita__
-	tmp = etc_buffer;
-	sceIoRead(ret, tmp, 256 * 1024);
-	sceIoClose(ret);
-#else
-	int sz = fileSystem->ReadFile(cachefname,(void**)&tmp,0);
-
-	if( sz == -1 )
-		return 1;
-#endif
-
-	if (tmp[0]==0) {
-		qglCompressedTexImage2D(target,level,GL_ETC1_RGB8_OES,width,height,0,etc1_data_size(width,height),tmp + 1);
-	} else {
-		qglTexImage2D(target,level,format,width,height,border,format,GL_UNSIGNED_SHORT_4_4_4_4,tmp + 1);
+static bool LoadPreparedTexture( idImage *image, const char *cacheName ) {
+	if ( !cacheName || !cacheName[0] || !r_useETC1.GetBool() ||
+			!r_useETC1Cache.GetBool() ) {
+		return false;
 	}
-
-#ifndef __vita__
-	fileSystem->FreeFile(tmp);
+	int cacheFormat, cacheDepth, cacheWidth, cacheHeight, cacheSize;
+	byte *data = NULL;
+#if defined(__vita__)
+	unsigned char *packedContents = NULL;
+	int packedLength = 0;
+	if ( PreparedCachePack_Read(PREPARED_CACHE_PACK_TEXTURE,
+			cacheName, &packedContents, &packedLength) ) {
+		if ( packedContents ) {
+		data = R_ConsumePreparedTextureCache(packedContents, packedLength,
+			&cacheFormat, &cacheDepth, &cacheWidth, &cacheHeight, &cacheSize);
+		}
+	}
 #endif
-	return 0;
+	bool migrateLegacy = false;
+	if ( !data ) {
+		idFile *file = fileSystem->OpenFileRead(cacheName, false);
+		if ( file ) {
+			data = R_ReadPreparedTextureCache(file, &cacheFormat, &cacheDepth,
+				&cacheWidth, &cacheHeight, &cacheSize);
+			fileSystem->CloseFile(file);
+			migrateLegacy = data != NULL;
+		}
+	}
+	if ( !data || cacheWidth > glConfig.maxTextureSize ||
+			cacheHeight > glConfig.maxTextureSize || cacheDepth > TD_HIGH_QUALITY ) {
+		free(data);
+		data = NULL;
+		return false;
+	}
+#if defined(__vita__)
+	if ( migrateLegacy ) {
+		byte header[PREPARED_TEXTURE_HEADER_SIZE];
+		R_BuildPreparedTextureHeader(header, cacheFormat, cacheDepth,
+			cacheWidth, cacheHeight, cacheSize);
+		PreparedCachePack_Write(PREPARED_CACHE_PACK_TEXTURE, cacheName,
+			header, sizeof(header), data, cacheSize);
+	}
+#endif
+
+	image->PurgeImage();
+	image->uploadWidth = cacheWidth;
+	image->uploadHeight = cacheHeight;
+	image->type = TT_2D;
+	image->internalFormat = GL_RGBA;
+	image->depth = (textureDepth_t)cacheDepth;
+	qglGenTextures(1, &image->texnum);
+	qglBindTexture(GL_TEXTURE_2D, image->texnum);
+	{
+		if ( cacheFormat == 0 ) {
+			qglCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_ETC1_RGB8_OES,
+				cacheWidth, cacheHeight, 0, cacheSize, data);
+		} else {
+			qglTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cacheWidth, cacheHeight,
+				0, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4, data);
+		}
+	}
+	free(data);
+	image->SetImageFilterAndRepeat();
+	GL_CheckErrors();
+	return true;
 }
 
-void myglTexImage2D(char* _cachefname,GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *pixels) {
+void myglTexImage2D(char* cachefname, int cacheDepth, GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *pixels) {
 	static int opaque = 0;
-	// LOGI("myglTexImage2D, name = %s", cachefname );
-	char cachefname[256] = {};
-	
 	if (r_useETC1.GetBool() && format == GL_RGBA && type == GL_UNSIGNED_BYTE) {
-
-		if (level == 0)
-			opaque = isopaque(width, height, pixels);
-
-		sprintf(cachefname, "ux0:data/dhewm3/base/%s", _cachefname);
-
-		if( uploadetc(cachefname, target, level, internalformat, width, height, border, format, type ) != 0 ) {
-			if (opaque)
-				etc1_compress_tex_image(cachefname,target, level, format, width, height, border, format, type, pixels);
-			else
-				rgba4444_convert_tex_image(cachefname,target, level, format, width, height, border, format, type, pixels);
-
-		}
+		// Subsequent mip levels must retain the base level's alpha format.
+		if (level == 0) opaque = isopaque(width, height, pixels);
+		char *writeName = r_useETC1Cache.GetBool() ? cachefname : NULL;
+		if (opaque)
+			etc1_compress_tex_image(writeName,cacheDepth,target,level,format,width,height,border,format,type,pixels);
+		else
+			rgba4444_convert_tex_image(writeName,cacheDepth,target,level,format,width,height,border,format,type,pixels);
 	} else {
-#if 0 // Force texture compression
-		qglTexImage2D(target,level,format == GL_RGBA ? GL_COMPRESSED_RGBA_S3TC_DXT5_EXT : GL_COMPRESSED_RGB_S3TC_DXT1_EXT,width,height,border,format,type,pixels);
-#else
 		qglTexImage2D(target,level,format,width,height,border,format,type,pixels);
-#endif
 	}
 }
 
@@ -467,7 +517,8 @@ There is no way to specify explicit mip map levels
 */
 void idImage::GenerateImage( const byte *pic, int width, int height,
                              textureFilter_t filterParm, bool allowDownSizeParm,
-                             textureRepeat_t repeatParm, textureDepth_t depthParm ) {
+                             textureRepeat_t repeatParm, textureDepth_t depthParm,
+                             const char *preparedCacheName ) {
 	bool	preserveBorder;
 	byte		*scaledBuffer;
 	int			scaled_width, scaled_height;
@@ -618,15 +669,9 @@ void idImage::GenerateImage( const byte *pic, int width, int height,
 	// LOGI("LOADING IMAGE %d (%s)",texnum,imgName.c_str());
 
 //	qglTexImage2D( GL_TEXTURE_2D, 0, internalFormat, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer );
-	char filename[MAX_IMAGE_NAME];
-	char*fptr=&filename[0];
-	ImageProgramStringToCompressedFileName(imgName, filename);
-	char *ext = strrchr(filename, '.');
-	if (ext) {
-		strcpy(ext, ".etc");
-	} else
-		fptr=0;
-	myglTexImage2D(fptr,GL_TEXTURE_2D, 0, internalFormat, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer);
+	char *cacheName = const_cast<char *>(preparedCacheName);
+	myglTexImage2D(cacheName, depth, GL_TEXTURE_2D, 0, internalFormat,
+		scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer);
 #ifndef VITA
 	// create and upload the mip map levels, which we do in all cases, even if we don't think they are needed
 	int		miplevel;
@@ -659,17 +704,8 @@ void idImage::GenerateImage( const byte *pic, int width, int height,
 		// upload the mip map
 		//qglTexImage2D( GL_TEXTURE_2D, miplevel, internalFormat, scaled_width, scaled_height,
 		//	0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer );
-		char filename[MAX_IMAGE_NAME];
-		char*fptr=&filename[0];
-		ImageProgramStringToCompressedFileName(imgName, filename);
-		char *ext = strrchr(filename, '.');
-		if (ext) {
-			strcpy(ext, ".e");
-			ext[2]='0'+miplevel/10;
-			ext[3]='0'+miplevel%10;
-		} else
-			fptr=0;
-		myglTexImage2D(fptr,GL_TEXTURE_2D, miplevel, internalFormat, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer);
+		myglTexImage2D(NULL, depth, GL_TEXTURE_2D, miplevel, internalFormat,
+			scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer);
 
 	}
 #endif
@@ -921,6 +957,12 @@ void	idImage::ActuallyLoadImage( bool fromBind ) {
 			}
 		}
 	} else {
+		const char *preparedPath = PreparedCachePath();
+		const bool hasPreparedCacheName = preparedPath != NULL;
+		if ( hasPreparedCacheName && LoadPreparedTexture(this, preparedPath) ) {
+			return;
+		}
+
 		// see if we have a pre-generated image file that is
 		// already image processed and compressed
 
@@ -937,7 +979,8 @@ void	idImage::ActuallyLoadImage( bool fromBind ) {
 		// may not be strictly necessary, but some code uses it, so let's leave it in
 		//imageHash = MD4_BlockChecksum( pic, width * height * 4 );
 
-		GenerateImage( pic, width, height, filter, allowDownSize, repeat, depth );
+		GenerateImage( pic, width, height, filter, allowDownSize, repeat, depth,
+			hasPreparedCacheName ? preparedCacheName.c_str() : NULL );
 		//timestamp = timestamp;
 
 		R_StaticFree( pic );
