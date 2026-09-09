@@ -435,6 +435,11 @@ idEntity::idEntity() {
 	memset( &refSound, 0, sizeof( refSound ) );
 
 	mpGUIState = -1;
+#ifdef __vita__
+	animVisualUpdateInterval = 0;
+	lastAnimVisualUpdateTime = -1;
+	nextAnimVisualUpdateTime = 0;
+#endif
 }
 
 /*
@@ -1465,11 +1470,53 @@ bool idEntity::UpdateRenderEntity( renderEntity_s *renderEntity, const renderVie
 
 	idAnimator *animator = GetAnimator();
 	if ( animator ) {
-		return animator->CreateFrame( gameLocal.time, false );
+	#ifdef __vita__
+		const int interval = animVisualUpdateInterval;
+		if ( interval > 0 && gameLocal.time < nextAnimVisualUpdateTime && gameLocal.time != lastAnimVisualUpdateTime ) {
+			return false;
+		}
+	#endif
+		const bool updated = animator->CreateFrame( gameLocal.time, false );
+	#ifdef __vita__
+		if ( interval == 0 ) {
+			nextAnimVisualUpdateTime = 0;
+		}
+	#endif
+		return updated;
 	}
 
 	return false;
 }
+
+#ifdef __vita__
+static bool EntityIntersectsView( const renderEntity_t &entity, const renderView_t &view ) {
+	const idVec3 center = entity.origin + entity.bounds.GetCenter() * entity.axis;
+	const idVec3 offset = center - view.vieworg;
+	const float radius = entity.bounds.GetRadius( entity.bounds.GetCenter() );
+	const float forward = offset * view.viewaxis[0];
+	if ( forward + radius <= 0.0f ) {
+		return false;
+	}
+	const float depth = forward > 0.0f ? forward : 0.0f;
+	const float horizontal = idMath::Fabs( offset * view.viewaxis[1] );
+	const float vertical = idMath::Fabs( offset * view.viewaxis[2] );
+	return horizontal - radius <= depth * idMath::Tan16( DEG2RAD( view.fov_x * 0.5f ) ) && vertical - radius <= depth * idMath::Tan16( DEG2RAD( view.fov_y * 0.5f ) );
+}
+
+int idEntity::AnimationLODInterval( const idVec3 &viewOrigin ) const {
+	if ( renderEntity.weaponDepthHack ) {
+		return 0;
+	}
+	const float distanceSqr = ( renderEntity.origin - viewOrigin ).LengthSqr();
+	if ( distanceSqr >= 768.0f * 768.0f ) {
+		return 96;
+	}
+	if ( distanceSqr >= 512.0f * 512.0f ) {
+		return 64;
+	}
+	return 0;
+}
+#endif
 
 /*
 ================
@@ -5007,6 +5054,21 @@ void idAnimatedEntity::UpdateAnimation( void ) {
 		// still fine the way it was
 		return;
 	}
+
+#ifdef __vita__
+	idPlayer *player = gameLocal.GetLocalPlayer();
+	renderView_t *playerView = player ? player->GetRenderView() : NULL;
+	int lodInterval = playerView ? AnimationLODInterval( playerView->vieworg ) : 0;
+	if ( playerView && !renderEntity.weaponDepthHack && ( !gameLocal.InPlayerPVS( this ) || !EntityIntersectsView( renderEntity, *playerView ) ) && lodInterval < 96 ) {
+		lodInterval = 96;
+	}
+	animVisualUpdateInterval = lodInterval;
+	if ( lodInterval > 0 && gameLocal.time < nextAnimVisualUpdateTime ) {
+		return;
+	}
+	lastAnimVisualUpdateTime = gameLocal.time;
+	nextAnimVisualUpdateTime = lodInterval > 0 ? gameLocal.time + lodInterval : 0;
+#endif
 
 	// get the latest frame bounds
 	animator.GetBounds( gameLocal.time, renderEntity.bounds );

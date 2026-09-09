@@ -367,6 +367,12 @@ protected:
 	renderEntity_t			renderEntity;						// used to present a model to the renderer
 	int						modelDefHandle;						// handle to static renderer model
 	refSound_t				refSound;							// used to present sound to the audio engine
+#ifdef __vita__
+	int						animVisualUpdateInterval;
+	int						lastAnimVisualUpdateTime;
+	int						nextAnimVisualUpdateTime;
+	int						AnimationLODInterval( const idVec3 &viewOrigin ) const;
+#endif
 
 private:
 	idPhysics_Static		defaultPhysicsObj;					// default physics object
