@@ -381,6 +381,13 @@ void idMover::Spawn( void ) {
 
 }
 
+void idMover::Think( void ) {
+	if ( CheckDormant() ) {
+		return;
+	}
+	idEntity::Think();
+}
+
 /*
 ================
 idMover::Hide

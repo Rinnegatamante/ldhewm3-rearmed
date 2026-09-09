@@ -606,6 +606,9 @@ void idEntityFx::Think( void ) {
 	if ( g_skipFX.GetBool() ) {
 		return;
 	}
+	if ( CheckDormant() ) {
+		return;
+	}
 
 	if ( thinkFlags & TH_THINK ) {
 		Run( gameLocal.time );

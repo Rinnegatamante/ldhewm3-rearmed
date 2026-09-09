@@ -628,6 +628,9 @@ idAFEntity_Base::Think
 ================
 */
 void idAFEntity_Base::Think( void ) {
+	if ( CheckDormant() ) {
+		return;
+	}
 	RunPhysics();
 	UpdateAnimation();
 	if ( thinkFlags & TH_UPDATEVISUALS ) {
