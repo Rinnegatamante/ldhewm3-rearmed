@@ -5062,12 +5062,18 @@ void idAnimatedEntity::UpdateAnimation( void ) {
 	if ( playerView && !renderEntity.weaponDepthHack && ( !gameLocal.InPlayerPVS( this ) || !EntityIntersectsView( renderEntity, *playerView ) ) && lodInterval < 96 ) {
 		lodInterval = 96;
 	}
+	const bool enteringLOD = animVisualUpdateInterval == 0 && lodInterval > 0;
 	animVisualUpdateInterval = lodInterval;
 	if ( lodInterval > 0 && gameLocal.time < nextAnimVisualUpdateTime ) {
 		return;
 	}
 	lastAnimVisualUpdateTime = gameLocal.time;
 	nextAnimVisualUpdateTime = lodInterval > 0 ? gameLocal.time + lodInterval : 0;
+	if ( enteringLOD && lodInterval > USERCMD_MSEC ) {
+		idEntity *phaseMaster = GetBindMaster();
+		const int phaseEntity = phaseMaster ? phaseMaster->entityNumber : entityNumber;
+		nextAnimVisualUpdateTime += ( phaseEntity % ( lodInterval / USERCMD_MSEC ) ) * USERCMD_MSEC;
+	}
 #endif
 
 	// get the latest frame bounds
