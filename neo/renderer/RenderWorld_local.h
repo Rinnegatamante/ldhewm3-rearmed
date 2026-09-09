@@ -257,8 +257,10 @@ public:
 	void					FreeInteractions();
 
 	void					PushVolumeIntoTree_r( idRenderEntityLocal *def, idRenderLightLocal *light, const idSphere *sphere, int numPoints, const idVec3 (*points), int nodeNum );
+	void					PushBoxIntoTree_r( idRenderEntityLocal *def, const idBox &box, const idSphere &sphere, int nodeNum );
 
 	void					PushVolumeIntoTree( idRenderEntityLocal *def, idRenderLightLocal *light, int numPoints, const idVec3 (*points) );
+	void					PushBoxIntoTree( idRenderEntityLocal *def, const idBox &box );
 
 	//-------------------------------
 	// tr_light.c

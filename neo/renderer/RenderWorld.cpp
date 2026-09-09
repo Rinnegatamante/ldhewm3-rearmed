@@ -1622,6 +1622,73 @@ void idRenderWorldLocal::PushVolumeIntoTree_r( idRenderEntityLocal *def, idRende
 	}
 }
 
+void idRenderWorldLocal::PushBoxIntoTree_r( idRenderEntityLocal *def, const idBox &box, const idSphere &sphere, int nodeNum ) {
+	if ( nodeNum < 0 ) {
+		portalArea_t *area = &portalAreas[-1 - nodeNum];
+		if ( area->viewCount == tr.viewCount ) {
+			return;
+		}
+		area->viewCount = tr.viewCount;
+		AddEntityRefToArea( def, area );
+		return;
+	}
+
+	areaNode_t *node = areaNodes + nodeNum;
+	if ( r_useNodeCommonChildren.GetBool() && node->commonChildrenArea != CHILDREN_HAVE_MULTIPLE_AREAS ) {
+		if ( portalAreas[node->commonChildrenArea].viewCount == tr.viewCount ) {
+			return;
+		}
+	}
+
+	const float distance = node->plane.Distance( sphere.GetOrigin() );
+	if ( distance >= sphere.GetRadius() ) {
+		if ( node->children[0] ) {
+			PushBoxIntoTree_r( def, box, sphere, node->children[0] );
+		}
+		return;
+	}
+	if ( distance <= -sphere.GetRadius() ) {
+		if ( node->children[1] ) {
+			PushBoxIntoTree_r( def, box, sphere, node->children[1] );
+		}
+		return;
+	}
+
+	const idVec3 &normal = node->plane.Normal();
+	const idVec3 &extents = box.GetExtents();
+	const idMat3 &axis = box.GetAxis();
+	const float radius = extents[0] * idMath::Fabs( axis[0] * normal ) +
+		extents[1] * idMath::Fabs( axis[1] * normal ) +
+		extents[2] * idMath::Fabs( axis[2] * normal );
+
+	if ( distance - radius >= 0.0f ) {
+		if ( node->children[0] ) {
+			PushBoxIntoTree_r( def, box, sphere, node->children[0] );
+		}
+		return;
+	}
+	if ( distance + radius < 0.0f ) {
+		if ( node->children[1] ) {
+			PushBoxIntoTree_r( def, box, sphere, node->children[1] );
+		}
+		return;
+	}
+	if ( node->children[0] ) {
+		PushBoxIntoTree_r( def, box, sphere, node->children[0] );
+	}
+	if ( node->children[1] ) {
+		PushBoxIntoTree_r( def, box, sphere, node->children[1] );
+	}
+}
+
+void idRenderWorldLocal::PushBoxIntoTree( idRenderEntityLocal *def, const idBox &box ) {
+	if ( areaNodes == NULL ) {
+		return;
+	}
+	idSphere sphere( box.GetCenter(), box.GetExtents().Length() );
+	PushBoxIntoTree_r( def, box, sphere, 0 );
+}
+
 /*
 ==============
 PushVolumeIntoTree
