@@ -318,6 +318,26 @@ void idSysLocal::OpenURL( const char *url, bool quit ) {
 ALCdevice *alDevice;
 ALCcontext *alContext;
 
+static const int VITA_MAX_ARGS = 64;
+static const int VITA_ARG_STORAGE_SIZE = 4096;
+static int vitaArgc;
+static char *vitaArgv[VITA_MAX_ARGS];
+static char vitaArgStorage[VITA_ARG_STORAGE_SIZE];
+
+static void Vita_CopyArguments( int argc, char **argv ) {
+	int used = 0;
+	vitaArgc = 0;
+	for ( int i = 0; i < argc && i < VITA_MAX_ARGS; i++ ) {
+		const int length = strlen( argv[i] ) + 1;
+		if ( used + length > VITA_ARG_STORAGE_SIZE ) {
+			break;
+		}
+		vitaArgv[vitaArgc++] = vitaArgStorage + used;
+		memcpy( vitaArgStorage + used, argv[i], length );
+		used += length;
+	}
+}
+
 int doom_main (unsigned int argc, void* argv) {
 	path_argv[0] = 0;
 
@@ -328,7 +348,15 @@ int doom_main (unsigned int argc, void* argv) {
 	// so set $LC_ALL to "C".
 	setenv("LC_ALL", "C", 1);
 
-	common->Init( 0, NULL );
+	int firstArg = vitaArgc > 0 ? 1 : 0;
+	if ( firstArg < vitaArgc && !sceClibStrncmp( vitaArgv[firstArg], "host0:", 6 ) ) {
+		firstArg++;
+	}
+	if ( firstArg < vitaArgc ) {
+		common->Init( vitaArgc - firstArg, &vitaArgv[firstArg] );
+	} else {
+		common->Init( 0, NULL );
+	}
 
 	while (1) {
 		common->Frame();
@@ -420,6 +448,7 @@ int main(int argc, char **argv) {
 	alContext = alcCreateContext( alDevice, attr );
 	
 	// We need a bigger stack to run Doom 3, so we create a new thread with a proper stack size
+	Vita_CopyArguments( argc, argv );
 	SceUID main_thread = sceKernelCreateThread("Doom 3", doom_main, 0x40, 0x200000, 0, 0, NULL);
 	sceKernelStartThread(main_thread, 0, NULL);
 	return sceKernelExitDeleteThread(0);
