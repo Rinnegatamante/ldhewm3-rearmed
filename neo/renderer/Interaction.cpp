@@ -275,6 +275,17 @@ static bool	R_ClipTriangleToLight( const idVec3 &a, const idVec3 &b, const idVec
 	return true;
 }
 
+static srfTriangles_t *R_CreateUnculledLightTris( const srfTriangles_t *tri ) {
+	srfTriangles_t *newTri = R_AllocStaticTriSurf();
+	newTri->ambientSurface = const_cast<srfTriangles_t *>( tri );
+	newTri->numVerts = tri->numVerts;
+	newTri->numIndexes = tri->numIndexes;
+	newTri->bounds = tri->bounds;
+	R_ReferenceStaticTriSurfVerts( newTri, tri );
+	R_ReferenceStaticTriSurfIndexes( newTri, tri );
+	return newTri;
+}
+
 /*
 ====================
 R_CreateLightTris
@@ -295,6 +306,10 @@ static srfTriangles_t *R_CreateLightTris( const idRenderEntityLocal *ent,
 	idBounds	bounds;
 	bool		includeBackFaces;
 	int			faceNum;
+
+	if ( ent->parms.hModel != NULL && ent->parms.hModel->IsDynamicModel() != DM_STATIC ) {
+		return R_CreateUnculledLightTris( tri );
+	}
 
 	tr.pc.c_createLightTris++;
 	c_backfaced = 0;
