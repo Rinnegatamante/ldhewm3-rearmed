@@ -1453,7 +1453,7 @@ idStaticEntity::Think
 void idStaticEntity::Think( void ) {
 	idEntity::Think();
 	if ( thinkFlags & TH_THINK ) {
-		if ( runGui && renderEntity.gui[0] ) {
+		if ( runGui && renderEntity.gui[0] && gameLocal.InPlayerPVS( this ) ) {
 			idPlayer *player = gameLocal.GetLocalPlayer();
 			if ( player ) {
 				if ( !player->objectiveSystemOpen ) {
