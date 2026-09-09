@@ -74,6 +74,16 @@ static inline __attribute__((always_inline)) float32x4_t neon_rcp(float32x4_t v)
     return e;
 }
 
+static inline __attribute__((always_inline)) float32x4_t neon_zero_w(float32x4_t v) {
+    return vsetq_lane_f32(0.0f, v, 3);
+}
+
+static inline __attribute__((always_inline)) uint8x8_t neon_cmp_bytes(uint32x4_t low, uint32x4_t high) {
+    low = vshrq_n_u32(low, 31);
+    high = vshrq_n_u32(high, 31);
+    return vmovn_u16(vcombine_u16(vmovn_u32(low), vmovn_u32(high)));
+}
+
 const char* idSIMD_NEON::GetName(void) const { return "NEON"; }
 
 void VPCALL idSIMD_NEON::Add(float*d,const float c,const float*s,const int n){
@@ -171,6 +181,25 @@ void VPCALL idSIMD_NEON::MulSub(float*d,const float*s0,const float*s1,const int 
         vst1q_f32(d+i+4,vmlsq_f32(vld1q_f32(d+i+4),vld1q_f32(s0+i+4),vld1q_f32(s1+i+4)));
     }
     for(;i<n;++i) d[i]-=s0[i]*s1[i];
+}
+
+void VPCALL idSIMD_NEON::CmpGE(byte*dst,const float*src0,const float constant,const int count){
+    const float32x4_t c=vdupq_n_f32(constant); int i=0;
+    for(;i<=count-8;i+=8){
+        const uint8x8_t result=neon_cmp_bytes(vcgeq_f32(vld1q_f32(src0+i),c),vcgeq_f32(vld1q_f32(src0+i+4),c));
+        vst1_u8(dst+i,result);
+    }
+    for(;i<count;++i) dst[i]=src0[i]>=constant;
+}
+
+void VPCALL idSIMD_NEON::CmpLT(byte*dst,const byte bitNum,const float*src0,const float constant,const int count){
+    const float32x4_t c=vdupq_n_f32(constant); const int8x8_t shift=vdup_n_s8(bitNum); int i=0;
+    for(;i<=count-8;i+=8){
+        uint8x8_t result=neon_cmp_bytes(vcltq_f32(vld1q_f32(src0+i),c),vcltq_f32(vld1q_f32(src0+i+4),c));
+        result=vshl_u8(result,shift);
+        vst1_u8(dst+i,vorr_u8(vld1_u8(dst+i),result));
+    }
+    for(;i<count;++i) dst[i]|=(src0[i]<constant)<<bitNum;
 }
 
 /* 16-element aligned helpers */
@@ -422,6 +451,22 @@ void VPCALL idSIMD_NEON::MinMax(idVec3&mn,idVec3&mx,
     mn.Set(a[0],a[1],a[2]); mx.Set(b[0],b[1],b[2]);
 }
 
+void VPCALL idSIMD_NEON::MinMax(idVec3&mn,idVec3&mx,
+                                  const idDrawVert*src,
+                                  const short*indexes,const int count){
+    float32x4_t vmin=vdupq_n_f32( idMath::INFINITY);
+    float32x4_t vmax=vdupq_n_f32(-idMath::INFINITY);
+    const char*base=reinterpret_cast<const char*>(src);
+    for(int i=0;i<count;++i){
+        const float*xyz=reinterpret_cast<const float*>(
+            base+indexes[i]*DRAWVERT_SIZE+DRAWVERT_XYZ_OFFSET);
+        const float32x4_t v=neon_zero_w(vld1q_f32(xyz));
+        vmin=vminq_f32(vmin,v); vmax=vmaxq_f32(vmax,v);
+    }
+    float a[4],b[4]; vst1q_f32(a,vmin); vst1q_f32(b,vmax);
+    mn.Set(a[0],a[1],a[2]); mx.Set(b[0],b[1],b[2]);
+}
+
 void VPCALL idSIMD_NEON::Dot(float*dst,const idPlane&constant,
                                const idDrawVert*src,const int count){
     const float*c=constant.ToFloatPtr();
@@ -434,9 +479,14 @@ void VPCALL idSIMD_NEON::Dot(float*dst,const idPlane&constant,
         const float*p1=reinterpret_cast<const float*>(base+(i+1)*DRAWVERT_SIZE+DRAWVERT_XYZ_OFFSET);
         const float*p2=reinterpret_cast<const float*>(base+(i+2)*DRAWVERT_SIZE+DRAWVERT_XYZ_OFFSET);
         const float*p3=reinterpret_cast<const float*>(base+(i+3)*DRAWVERT_SIZE+DRAWVERT_XYZ_OFFSET);
-        float32x4_t x4=make_f32x4(p0[0],p1[0],p2[0],p3[0]);
-        float32x4_t y4=make_f32x4(p0[1],p1[1],p2[1],p3[1]);
-        float32x4_t z4=make_f32x4(p0[2],p1[2],p2[2],p3[2]);
+        const float32x4_t p0v=vld1q_f32(p0);
+        const float32x4_t p1v=vld1q_f32(p1);
+        const float32x4_t p2v=vld1q_f32(p2);
+        const float32x4_t p3v=vld1q_f32(p3);
+        const float32x4x2_t t01=vtrnq_f32(p0v,p1v), t23=vtrnq_f32(p2v,p3v);
+        const float32x4_t x4=vcombine_f32(vget_low_f32(t01.val[0]),vget_low_f32(t23.val[0]));
+        const float32x4_t y4=vcombine_f32(vget_low_f32(t01.val[1]),vget_low_f32(t23.val[1]));
+        const float32x4_t z4=vcombine_f32(vget_high_f32(t01.val[0]),vget_high_f32(t23.val[0]));
         float32x4_t r=c3;
         r=vmlaq_f32(r,x4,c0); r=vmlaq_f32(r,y4,c1); r=vmlaq_f32(r,z4,c2);
         vst1q_f32(dst+i,r);

@@ -56,6 +56,9 @@ public:
     virtual void VPCALL MulSub(float*dst,const float c,const float*src,const int n);
     virtual void VPCALL MulSub(float*dst,const float*s0,const float*s1,const int n);
 
+    virtual void VPCALL CmpGE(byte*dst,const float*src0,const float constant,const int count);
+    virtual void VPCALL CmpLT(byte*dst,const byte bitNum,const float*src0,const float constant,const int count);
+
     virtual void VPCALL Zero16(float*dst,const int count);
     virtual void VPCALL Negate16(float*dst,const int count);
     virtual void VPCALL Copy16(float*dst,const float*src,const int count);
@@ -74,6 +77,7 @@ public:
     virtual void VPCALL Dot(float*dst,const idVec3&constant,const idPlane*src,const int count);
 
     virtual void VPCALL MinMax(idVec3&mn,idVec3&mx,const idDrawVert*src,const int*indexes,const int count);
+    virtual void VPCALL MinMax(idVec3&mn,idVec3&mx,const idDrawVert*src,const short*indexes,const int count);
 
     virtual void VPCALL ConvertJointQuatsToJointMats(idJointMat*jm,const idJointQuat*jq,const int n);
     virtual void VPCALL TransformJoints(idJointMat*jm,const int*parents,const int f,const int l);
