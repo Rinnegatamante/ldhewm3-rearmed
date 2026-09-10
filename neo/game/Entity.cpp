@@ -1507,6 +1507,11 @@ int idEntity::AnimationLODInterval( const idVec3 &viewOrigin ) const {
 	if ( renderEntity.weaponDepthHack ) {
 		return 0;
 	}
+	const idEntity *lodEntity = GetBindMaster();
+	if ( !lodEntity ) {
+		lodEntity = this;
+	}
+	const bool actorLOD = lodEntity->IsType( idActor::Type ) && !lodEntity->IsType( idPlayer::Type );
 	const float distanceSqr = ( renderEntity.origin - viewOrigin ).LengthSqr();
 	if ( distanceSqr >= 768.0f * 768.0f ) {
 		return 96;
@@ -1514,7 +1519,7 @@ int idEntity::AnimationLODInterval( const idVec3 &viewOrigin ) const {
 	if ( distanceSqr >= 512.0f * 512.0f ) {
 		return 64;
 	}
-	return 0;
+	return actorLOD ? 32 : 0;
 }
 #endif
 
