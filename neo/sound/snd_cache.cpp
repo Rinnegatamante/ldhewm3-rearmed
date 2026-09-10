@@ -636,65 +636,59 @@ void idSoundSample::Load( void ) {
 		}
 	}
 
-	// OGG decompressed at load time (when smaller than s_decompressionLimit seconds, 6 seconds by default)
-	if ( objectInfo.wFormatTag == WAVE_FORMAT_TAG_OGG ) {
-		if ( ( objectSize < ( ( int ) objectInfo.nSamplesPerSec * idSoundSystemLocal::s_decompressionLimit.GetInteger() ) ) ) {
-			alGetError();
-			alGenBuffers( 1, &openalBuffer );
-			if ( alGetError() != AL_NO_ERROR )
-				common->Error( "idSoundCache: error generating OpenAL hardware buffer" );
-			if ( alIsBuffer( openalBuffer ) ) {
-				idSampleDecoder *decoder = idSampleDecoder::Alloc();
-				float *destData = (float *)soundCacheAllocator.Alloc( ( LengthIn44kHzSamples() + 1 ) * sizeof( float ) );
-
-				// Decoder *always* outputs 44 kHz data
-				decoder->Decode( this, 0, LengthIn44kHzSamples(), destData );
-
-				// Downsample back to original frequency (save memory)
-				if ( objectInfo.nSamplesPerSec == 11025 ) {
-					for ( int i = 0; i < objectSize; i++ ) {
-						if ( destData[i*4] < -32768.0f )
-							((short *)destData)[i] = -32768;
-						else if ( destData[i*4] > 32767.0f )
-							((short *)destData)[i] = 32767;
-						else
-							((short *)destData)[i] = idMath::FtoiFast( destData[i*4] );
-					}
-				} else if ( objectInfo.nSamplesPerSec == 22050 ) {
-					for ( int i = 0; i < objectSize; i++ ) {
-						if ( destData[i*2] < -32768.0f )
-							((short *)destData)[i] = -32768;
-						else if ( destData[i*2] > 32767.0f )
-							((short *)destData)[i] = 32767;
-						else
-							((short *)destData)[i] = idMath::FtoiFast( destData[i*2] );
-					}
-				} else {
-					for ( int i = 0; i < objectSize; i++ ) {
-						if ( destData[i] < -32768.0f )
-							((short *)destData)[i] = -32768;
-						else if ( destData[i] > 32767.0f )
-							((short *)destData)[i] = 32767;
-						else
-							((short *)destData)[i] = idMath::FtoiFast( destData[i] );
-					}
-				}
-
-				alGetError();
-				alBufferData( openalBuffer, objectInfo.nChannels==1?AL_FORMAT_MONO16:AL_FORMAT_STEREO16, destData, objectSize * sizeof( short ), objectInfo.nSamplesPerSec );
-				if ( alGetError() != AL_NO_ERROR ) {
-					common->Warning( "idSoundCache: error loading data into OpenAL hardware buffer" );
-					hardwareBuffer = false;
-				} else {
-					hardwareBuffer = true;
-				}
-
-				soundCacheAllocator.Free( (byte *)destData );
-				idSampleDecoder::Free( decoder );
-			}
-		}
+	if ( objectInfo.wFormatTag == WAVE_FORMAT_TAG_OGG &&
+			objectSize < objectInfo.nSamplesPerSec * idSoundSystemLocal::s_decompressionLimit.GetInteger() ) {
+		PredecodeOGG();
 	}
 
+}
+
+bool idSoundSample::PredecodeOGG() {
+	if ( objectInfo.wFormatTag != WAVE_FORMAT_TAG_OGG || hardwareBuffer ) {
+		return hardwareBuffer;
+	}
+
+	alGetError();
+	alGenBuffers( 1, &openalBuffer );
+	if ( alGetError() != AL_NO_ERROR || !alIsBuffer( openalBuffer ) ) {
+		openalBuffer = 0;
+		return false;
+	}
+
+	idSampleDecoder *decoder = idSampleDecoder::Alloc();
+	float *destData = (float *)soundCacheAllocator.Alloc( ( LengthIn44kHzSamples() + 1 ) * sizeof( float ) );
+	if ( !decoder || !destData ) {
+		if ( destData ) {
+			soundCacheAllocator.Free( (byte *)destData );
+		}
+		if ( decoder ) {
+			idSampleDecoder::Free( decoder );
+		}
+		alDeleteBuffers( 1, &openalBuffer );
+		openalBuffer = 0;
+		return false;
+	}
+
+	decoder->Decode( this, 0, LengthIn44kHzSamples(), destData );
+	const int stride = 44100 / objectInfo.nSamplesPerSec;
+	short *pcm = (short *)destData;
+	for ( int i = 0; i < objectSize; i++ ) {
+		pcm[i] = (short)idMath::ClampInt( -32768, 32767, idMath::FtoiFast( destData[i * stride] ) );
+	}
+
+	alGetError();
+	alBufferData( openalBuffer, objectInfo.nChannels == 1 ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16,
+		destData, objectSize * sizeof( short ), objectInfo.nSamplesPerSec );
+	hardwareBuffer = alGetError() == AL_NO_ERROR;
+	if ( !hardwareBuffer ) {
+		common->Warning( "idSoundCache: error loading data into OpenAL hardware buffer" );
+		alDeleteBuffers( 1, &openalBuffer );
+		openalBuffer = 0;
+	}
+
+	soundCacheAllocator.Free( (byte *)destData );
+	idSampleDecoder::Free( decoder );
+	return hardwareBuffer;
 }
 
 /*

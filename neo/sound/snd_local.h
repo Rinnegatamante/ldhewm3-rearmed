@@ -790,6 +790,9 @@ public:
 	static idCVar			s_realTimeDecoding;
 	static idCVar			s_useEAXReverb;
 	static idCVar			s_decompressionLimit;
+#if defined(__vita__)
+	static idCVar			s_loopingDecompressionLimit;
+#endif
 
 	static idCVar			s_slowAttenuate;
 
@@ -841,6 +844,7 @@ public:
 	ID_TIME_T					GetNewTimeStamp( void ) const;
 	void					MakeDefault();				// turns it into a beep
 	void					Load();						// loads the current sound based on name
+	bool					PredecodeOGG();
 	void					Reload( bool force );		// reloads if timestamp has changed, or always if force
 	void					PurgeSoundSample();			// frees all data
 	void					CheckForDownSample();		// down sample if required

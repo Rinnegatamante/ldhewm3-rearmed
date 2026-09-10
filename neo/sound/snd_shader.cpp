@@ -365,6 +365,19 @@ bool idSoundShader::ParseShader( idLexer &src ) {
 		CheckShakesAndOgg();
 	}
 
+#if defined(__vita__)
+	if ( ( parms.soundShaderFlags & SSF_LOOPING ) && numLeadins == 0 ) {
+		const int limit = idSoundSystemLocal::s_loopingDecompressionLimit.GetInteger();
+		for ( i = 0; i < numEntries; i++ ) {
+			idSoundSample *sample = entries[i];
+			if ( sample && sample->objectInfo.wFormatTag == WAVE_FORMAT_TAG_OGG &&
+					sample->objectSize <= sample->objectInfo.nSamplesPerSec * sample->objectInfo.nChannels * limit ) {
+				sample->PredecodeOGG();
+			}
+		}
+	}
+#endif
+
 	return true;
 }
 
