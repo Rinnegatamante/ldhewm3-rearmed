@@ -5056,11 +5056,14 @@ void idAnimatedEntity::UpdateAnimation( void ) {
 	}
 
 #ifdef __vita__
-	idPlayer *player = gameLocal.GetLocalPlayer();
-	renderView_t *playerView = player ? player->GetRenderView() : NULL;
-	int lodInterval = playerView ? AnimationLODInterval( playerView->vieworg ) : 0;
-	if ( playerView && !renderEntity.weaponDepthHack && ( !gameLocal.InPlayerPVS( this ) || !EntityIntersectsView( renderEntity, *playerView ) ) && lodInterval < 96 ) {
-		lodInterval = 96;
+	int lodInterval = 0;
+	if ( !gameLocal.inCinematic ) {
+		idPlayer *player = gameLocal.GetLocalPlayer();
+		renderView_t *playerView = player ? player->GetRenderView() : NULL;
+		lodInterval = playerView ? AnimationLODInterval( playerView->vieworg ) : 0;
+		if ( playerView && !renderEntity.weaponDepthHack && ( !gameLocal.InPlayerPVS( this ) || !EntityIntersectsView( renderEntity, *playerView ) ) && lodInterval < 96 ) {
+			lodInterval = 96;
+		}
 	}
 	const bool enteringLOD = animVisualUpdateInterval == 0 && lodInterval > 0;
 	animVisualUpdateInterval = lodInterval;
