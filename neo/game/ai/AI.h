@@ -290,6 +290,11 @@ protected:
 	float					blockedRadius;
 	int						blockedMoveTime;
 	int						blockedAttackTime;
+#ifdef __vita__
+	int						nextObstacleAvoidanceTime;
+	idVec3					cachedObstacleAvoidanceGoal;
+	idVec3					cachedObstacleAvoidancePos;
+#endif
 
 	// turning
 	float					ideal_yaw;

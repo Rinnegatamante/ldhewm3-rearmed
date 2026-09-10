@@ -294,6 +294,11 @@ idAI::idAI() {
 	blockedRadius		= 0.0f;
 	blockedMoveTime		= 750;
 	blockedAttackTime	= 750;
+#ifdef __vita__
+	nextObstacleAvoidanceTime = 0;
+	cachedObstacleAvoidanceGoal.Zero();
+	cachedObstacleAvoidancePos.Zero();
+#endif
 	turnRate			= 360.0f;
 	turnVel				= 0.0f;
 	anim_turn_yaw		= 0.0f;
@@ -2549,6 +2554,13 @@ void idAI::CheckObstacleAvoidance( const idVec3 &goalPos, idVec3 &newPos ) {
 		return;
 	}
 
+#ifdef __vita__
+	if ( !gameLocal.inCinematic && gameLocal.time < nextObstacleAvoidanceTime && ( goalPos - cachedObstacleAvoidanceGoal ).LengthSqr() < Square( 64.0f ) ) {
+		newPos = cachedObstacleAvoidancePos;
+		return;
+	}
+#endif
+
 	const idVec3 &origin = physicsObj.GetOrigin();
 
 	obstacle = NULL;
@@ -2620,6 +2632,11 @@ void idAI::CheckObstacleAvoidance( const idVec3 &goalPos, idVec3 &newPos ) {
 		newPos = path.seekPos;
 		move.obstacle = NULL;
 	}
+#ifdef __vita__
+	cachedObstacleAvoidanceGoal = goalPos;
+	cachedObstacleAvoidancePos = newPos;
+	nextObstacleAvoidanceTime = gameLocal.inCinematic ? 0 : gameLocal.time + 64;
+#endif
 }
 
 /*
