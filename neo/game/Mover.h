@@ -52,7 +52,6 @@ public:
 							idMover( void );
 
 	void					Spawn( void );
-	virtual void			Think( void );
 
 	void					Save( idSaveGame *savefile ) const;
 	void					Restore( idRestoreGame *savefile );
