@@ -2757,6 +2757,18 @@ void idEntity::UpdateFromPhysics( bool moveBack ) {
 		}
 	}
 
+#ifdef __vita__
+	const idEntity *visualRoot = teamMaster ? teamMaster : this;
+	const char *visualRootName = visualRoot->GetName();
+	const bool reduceCanisterVisuals =
+		idStr::Icmp( visualRootName, "canismover_anchor" ) == 0 ||
+		idStr::Icmp( visualRootName, "canismover2_anchor" ) == 0;
+	if ( !moveBack && !gameLocal.inCinematic && reduceCanisterVisuals &&
+		( ( gameLocal.framenum + visualRoot->entityNumber ) & 1 ) != 0 ) {
+		return;
+	}
+#endif
+
 	UpdateVisuals();
 }
 
