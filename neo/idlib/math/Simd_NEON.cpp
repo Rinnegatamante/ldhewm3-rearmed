@@ -513,6 +513,21 @@ int VPCALL idSIMD_NEON::CreateShadowCache(idVec4*vc,int*vr,
 }
 
 void VPCALL idSIMD_NEON::MinMax(idVec3&mn,idVec3&mx,
+                                  const idDrawVert*src,const int count){
+    float32x4_t vmin=vdupq_n_f32( idMath::INFINITY);
+    float32x4_t vmax=vdupq_n_f32(-idMath::INFINITY);
+    const char*base=reinterpret_cast<const char*>(src);
+    for(int i=0;i<count;++i){
+        const float*xyz=reinterpret_cast<const float*>(
+            base+i*DRAWVERT_SIZE+DRAWVERT_XYZ_OFFSET);
+        const float32x4_t v=neon_zero_w(vld1q_f32(xyz));
+        vmin=vminq_f32(vmin,v); vmax=vmaxq_f32(vmax,v);
+    }
+    float a[4],b[4]; vst1q_f32(a,vmin); vst1q_f32(b,vmax);
+    mn.Set(a[0],a[1],a[2]); mx.Set(b[0],b[1],b[2]);
+}
+
+void VPCALL idSIMD_NEON::MinMax(idVec3&mn,idVec3&mx,
                                   const idDrawVert*src,
                                   const int*indexes,const int count){
     float32x4_t vmin=vdupq_n_f32( idMath::INFINITY);

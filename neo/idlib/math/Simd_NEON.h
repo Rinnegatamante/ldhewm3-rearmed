@@ -76,6 +76,7 @@ public:
     virtual void VPCALL Dot(float*dst,const idPlane&constant,const idDrawVert*src,const int count);
     virtual void VPCALL Dot(float*dst,const idVec3&constant,const idPlane*src,const int count);
 
+    virtual void VPCALL MinMax(idVec3&mn,idVec3&mx,const idDrawVert*src,const int count);
     virtual void VPCALL MinMax(idVec3&mn,idVec3&mx,const idDrawVert*src,const int*indexes,const int count);
     virtual void VPCALL MinMax(idVec3&mn,idVec3&mx,const idDrawVert*src,const short*indexes,const int count);
 
