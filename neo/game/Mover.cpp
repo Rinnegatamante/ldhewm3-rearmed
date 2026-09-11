@@ -381,6 +381,23 @@ void idMover::Spawn( void ) {
 
 }
 
+void idMover::Think( void ) {
+#ifdef __vita__
+	if ( !gameLocal.inCinematic && areaPortal == 0 && !gameLocal.InPlayerPVS( this ) ) {
+		const int intervalFrames = gameLocal.InPlayerConnectedArea( this ) ? 2 : 4;
+		const int linearEndTime = physicsObj.GetLinearEndTime();
+		const int angularEndTime = physicsObj.GetAngularEndTime();
+		const bool reachesEnd =
+			( linearEndTime > gameLocal.previousTime && linearEndTime <= gameLocal.time ) ||
+			( angularEndTime > gameLocal.previousTime && angularEndTime <= gameLocal.time );
+		if ( !reachesEnd && ( ( gameLocal.framenum + entityNumber ) & ( intervalFrames - 1 ) ) != 0 ) {
+			return;
+		}
+	}
+#endif
+	idEntity::Think();
+}
+
 /*
 ================
 idMover::Hide
