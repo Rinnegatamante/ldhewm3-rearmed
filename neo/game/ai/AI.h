@@ -291,6 +291,11 @@ protected:
 	int						blockedMoveTime;
 	int						blockedAttackTime;
 #ifdef __vita__
+	int						nextAIScriptTime;
+	int						nextMovePathTime;
+	moveCommand_t			cachedMovePathCommand;
+	idVec3					cachedMovePathDest;
+	idVec3					cachedMoveSeekPos;
 	int						nextObstacleAvoidanceTime;
 	idVec3					cachedObstacleAvoidanceGoal;
 	idVec3					cachedObstacleAvoidancePos;

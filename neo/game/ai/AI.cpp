@@ -51,6 +51,17 @@ static const char *moveCommandString[ NUM_MOVE_COMMANDS ] = {
 	"MOVE_WANDER"
 };
 
+#ifdef __vita__
+static int NextVitaAINavigationTime( int time, int entityNumber, int interval ) {
+	const int phase = ( entityNumber % ( interval / USERCMD_MSEC ) ) * USERCMD_MSEC;
+	int remainder = ( time - phase ) % interval;
+	if ( remainder < 0 ) {
+		remainder += interval;
+	}
+	return time + interval - remainder;
+}
+#endif
+
 /*
 =====================
 idMoveState::idMoveState
@@ -295,6 +306,11 @@ idAI::idAI() {
 	blockedMoveTime		= 750;
 	blockedAttackTime	= 750;
 #ifdef __vita__
+	nextAIScriptTime = 0;
+	nextMovePathTime = 0;
+	cachedMovePathCommand = MOVE_NONE;
+	cachedMovePathDest.Zero();
+	cachedMoveSeekPos.Zero();
 	nextObstacleAvoidanceTime = 0;
 	cachedObstacleAvoidanceGoal.Zero();
 	cachedObstacleAvoidancePos.Zero();
@@ -1198,6 +1214,15 @@ idAI::UpdateAIScript
 =====================
 */
 void idAI::UpdateAIScript( void ) {
+#ifdef __vita__
+	const bool urgent = enemy.GetEntity() || AI_PAIN || AI_DAMAGE || AI_ACTIVATED || AI_PUSHED || AI_BLOCKED;
+	if ( !cinematic && !gameLocal.inCinematic && !urgent ) {
+		if ( gameLocal.time < nextAIScriptTime ) {
+			return;
+		}
+		nextAIScriptTime = NextVitaAINavigationTime( gameLocal.time, entityNumber, 32 );
+	}
+#endif
 	UpdateScript();
 
 	// clear the hit enemy flag so we catch the next time we hit someone
@@ -2236,6 +2261,20 @@ bool idAI::GetMovePos( idVec3 &seekPos ) {
 		break;
 	}
 
+#ifdef __vita__
+	if ( !gameLocal.inCinematic && gameLocal.time < nextMovePathTime && move.moveCommand == cachedMovePathCommand && ( move.moveDest - cachedMovePathDest ).LengthSqr() < Square( 48.0f ) ) {
+		bool stableGoal = true;
+		if ( move.moveCommand == MOVE_TO_ENTITY ) {
+			idEntity *goalEntity = move.goalEntity.GetEntity();
+			stableGoal = goalEntity && ( goalEntity->GetPhysics()->GetOrigin() - move.goalEntityOrigin ).LengthSqr() < Square( 48.0f );
+		}
+		if ( stableGoal ) {
+			seekPos = cachedMoveSeekPos;
+			return true;
+		}
+	}
+#endif
+
 	if ( move.moveCommand == MOVE_TO_ENTITY ) {
 		MoveToEntity( move.goalEntity.GetEntity() );
 	}
@@ -2290,6 +2329,16 @@ bool idAI::GetMovePos( idVec3 &seekPos ) {
 	if ( result && ( ai_debugMove.GetBool() ) ) {
 		gameRenderWorld->DebugLine( colorCyan, physicsObj.GetOrigin(), seekPos );
 	}
+
+#ifdef __vita__
+	if ( result && !gameLocal.inCinematic ) {
+		const int interval = enemy.GetEntity() ? 64 : 96;
+		cachedMovePathCommand = move.moveCommand;
+		cachedMovePathDest = move.moveDest;
+		cachedMoveSeekPos = seekPos;
+		nextMovePathTime = NextVitaAINavigationTime( gameLocal.time, entityNumber, interval );
+	}
+#endif
 
 	return result;
 }
@@ -2635,7 +2684,8 @@ void idAI::CheckObstacleAvoidance( const idVec3 &goalPos, idVec3 &newPos ) {
 #ifdef __vita__
 	cachedObstacleAvoidanceGoal = goalPos;
 	cachedObstacleAvoidancePos = newPos;
-	nextObstacleAvoidanceTime = gameLocal.inCinematic ? 0 : gameLocal.time + 64;
+	const int interval = enemy.GetEntity() ? 64 : 96;
+	nextObstacleAvoidanceTime = gameLocal.inCinematic ? 0 : NextVitaAINavigationTime( gameLocal.time, entityNumber, interval );
 #endif
 }
 
