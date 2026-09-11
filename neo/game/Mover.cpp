@@ -383,7 +383,9 @@ void idMover::Spawn( void ) {
 
 void idMover::Think( void ) {
 #ifdef __vita__
-	if ( !gameLocal.inCinematic && areaPortal == 0 && !gameLocal.InPlayerPVS( this ) ) {
+	const char *modelName = spawnArgs.GetString( "model" );
+	const bool isAirlockMover = idStr::Icmpn( modelName, "models/mapobjects/airlock/", 26 ) == 0;
+	if ( !isAirlockMover && !gameLocal.inCinematic && areaPortal == 0 && !gameLocal.InPlayerPVS( this ) ) {
 		const int intervalFrames = gameLocal.InPlayerConnectedArea( this ) ? 2 : 4;
 		const int linearEndTime = physicsObj.GetLinearEndTime();
 		const int angularEndTime = physicsObj.GetAngularEndTime();
