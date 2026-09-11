@@ -2684,7 +2684,7 @@ void idAI::CheckObstacleAvoidance( const idVec3 &goalPos, idVec3 &newPos ) {
 #ifdef __vita__
 	cachedObstacleAvoidanceGoal = goalPos;
 	cachedObstacleAvoidancePos = newPos;
-	const int interval = enemy.GetEntity() ? 64 : 96;
+	const int interval = enemy.GetEntity() ? 96 : 128;
 	nextObstacleAvoidanceTime = gameLocal.inCinematic ? 0 : NextVitaAINavigationTime( gameLocal.time, entityNumber, interval );
 #endif
 }
