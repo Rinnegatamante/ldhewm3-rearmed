@@ -694,10 +694,33 @@ Returns true if the box is outside the given global frustum, (positive sides are
 =================
 */
 bool R_CullLocalBox( const idBounds &bounds, const float modelMatrix[16], int numPlanes, const idPlane *planes ) {
+#ifdef __vita__
+	if ( r_useCulling.GetInteger() == 0 ) {
+		return false;
+	}
+	if ( r_useCulling.GetInteger() == 1 ) {
+		return R_RadiusCullLocalBox( bounds, modelMatrix, numPlanes, planes );
+	}
+	for ( int i = 0; i < numPlanes; ++i ) {
+		idPlane localPlane;
+		R_GlobalPlaneToLocal( modelMatrix, planes[i], localPlane );
+		idVec3 corner;
+		corner[0] = localPlane[0] >= 0.0f ? bounds[0][0] : bounds[1][0];
+		corner[1] = localPlane[1] >= 0.0f ? bounds[0][1] : bounds[1][1];
+		corner[2] = localPlane[2] >= 0.0f ? bounds[0][2] : bounds[1][2];
+		if ( localPlane.Distance( corner ) >= 0.0f ) {
+			tr.pc.c_box_cull_out++;
+			return true;
+		}
+	}
+	tr.pc.c_box_cull_in++;
+	return false;
+#else
 	if ( R_RadiusCullLocalBox( bounds, modelMatrix, numPlanes, planes ) ) {
 		return true;
 	}
 	return R_CornerCullLocalBox( bounds, modelMatrix, numPlanes, planes );
+#endif
 }
 
 /*
