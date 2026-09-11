@@ -1142,10 +1142,14 @@ void idWeapon::MuzzleFlashLight( void ) {
 
 	if ( muzzleFlashHandle != -1 ) {
 		gameRenderWorld->UpdateLightDef( muzzleFlashHandle, &muzzleFlash );
-		gameRenderWorld->UpdateLightDef( worldMuzzleFlashHandle, &worldMuzzleFlash );
+		if ( worldMuzzleFlashHandle != -1 ) {
+			gameRenderWorld->UpdateLightDef( worldMuzzleFlashHandle, &worldMuzzleFlash );
+		}
 	} else {
 		muzzleFlashHandle = gameRenderWorld->AddLightDef( &muzzleFlash );
-		worldMuzzleFlashHandle = gameRenderWorld->AddLightDef( &worldMuzzleFlash );
+		if ( gameLocal.isMultiplayer || pm_thirdPerson.GetBool() || g_showPlayerShadow.GetBool() ) {
+			worldMuzzleFlashHandle = gameRenderWorld->AddLightDef( &worldMuzzleFlash );
+		}
 	}
 }
 
@@ -1983,10 +1987,24 @@ void idWeapon::PresentWeapon( bool showViewModel ) {
 	if ( muzzleFlashHandle != -1 ) {
 		UpdateFlashPosition();
 		gameRenderWorld->UpdateLightDef( muzzleFlashHandle, &muzzleFlash );
-		gameRenderWorld->UpdateLightDef( worldMuzzleFlashHandle, &worldMuzzleFlash );
+		const bool needsWorldMuzzleFlash = gameLocal.isMultiplayer || pm_thirdPerson.GetBool() || g_showPlayerShadow.GetBool();
+		if ( needsWorldMuzzleFlash ) {
+			if ( worldMuzzleFlashHandle == -1 ) {
+				worldMuzzleFlashHandle = gameRenderWorld->AddLightDef( &worldMuzzleFlash );
+			} else {
+				gameRenderWorld->UpdateLightDef( worldMuzzleFlashHandle, &worldMuzzleFlash );
+			}
+		} else if ( worldMuzzleFlashHandle != -1 ) {
+			gameRenderWorld->FreeLightDef( worldMuzzleFlashHandle );
+			worldMuzzleFlashHandle = -1;
+		}
 
 		// wake up monsters with the flashlight
-		if ( !gameLocal.isMultiplayer && lightOn && !owner->fl.notarget ) {
+		if ( !gameLocal.isMultiplayer && lightOn && !owner->fl.notarget
+#ifdef __vita__
+				&& ( g_debugWeapon.GetBool() || ( gameLocal.framenum & 1 ) == 0 )
+#endif
+			) {
 			AlertMonsters();
 		}
 	}
