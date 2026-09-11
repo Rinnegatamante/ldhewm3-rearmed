@@ -307,7 +307,7 @@ static srfTriangles_t *R_CreateLightTris( const idRenderEntityLocal *ent,
 	bool		includeBackFaces;
 	int			faceNum;
 
-	if ( ent->parms.hModel != NULL && ent->parms.hModel->IsDynamicModel() != DM_STATIC ) {
+	if ( R_IsVitaViewFlashlight( light ) || ( ent->parms.hModel != NULL && ent->parms.hModel->IsDynamicModel() != DM_STATIC ) ) {
 		return R_CreateUnculledLightTris( tri );
 	}
 
@@ -874,6 +874,7 @@ void idInteraction::CreateInteraction( const idRenderModel *model ) {
 	surfaces = (surfaceInteraction_t *)R_ClearedStaticAlloc( sizeof( *surfaces ) * numSurfaces );
 
 	interactionGenerated = false;
+	const bool vitaViewFlashlight = R_IsVitaViewFlashlight( lightDef );
 
 	// check each surface in the model
 	for ( int c = 0 ; c < model->NumSurfaces() ; c++ ) {
@@ -896,7 +897,7 @@ void idInteraction::CreateInteraction( const idRenderModel *model ) {
 		}
 
 		// try to cull each surface
-		if ( R_CullLocalBox( tri->bounds, entityDef->modelMatrix, 6, lightDef->frustum ) ) {
+		if ( !vitaViewFlashlight && R_CullLocalBox( tri->bounds, entityDef->modelMatrix, 6, lightDef->frustum ) ) {
 			continue;
 		}
 
@@ -1053,6 +1054,11 @@ void idInteraction::AddActiveInteraction( void ) {
 	vLight = lightDef->viewLight;
 	vEntity = entityDef->viewEntity;
 
+	if ( R_IsVitaViewFlashlight( lightDef ) &&
+		R_CullLocalBox( entityDef->referenceBounds, vEntity->modelMatrix, 6, lightDef->frustum ) ) {
+		return;
+	}
+
 	// do not waste time culling the interaction frustum if there will be no shadows
 	if ( !HasShadows() ) {
 
@@ -1129,11 +1135,15 @@ void idInteraction::AddActiveInteraction( void ) {
 			srfTriangles_t *lightTris = sint->lightTris;
 
 			if ( lightTris ) {
+				if ( R_IsVitaViewFlashlight( lightDef ) &&
+					R_CullLocalBox( lightTris->bounds, vEntity->modelMatrix, 6, lightDef->frustum ) ) {
+					continue;
+				}
 
 				// try to cull before adding
 				// FIXME: this may not be worthwhile. We have already done culling on the ambient,
 				// but individual surfaces may still be cropped somewhat more
-				if ( !R_CullLocalBox( lightTris->bounds, vEntity->modelMatrix, 5, tr.viewDef->frustum ) ) {
+				if ( R_IsVitaViewFlashlight( lightDef ) || !R_CullLocalBox( lightTris->bounds, vEntity->modelMatrix, 5, tr.viewDef->frustum ) ) {
 
 					// make sure the original surface has its ambient cache created
 					if ( !R_CreateAmbientCache( sint->ambientTris, sint->shader->ReceivesLighting() ) ) {

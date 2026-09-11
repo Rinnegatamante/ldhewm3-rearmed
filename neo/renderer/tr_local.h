@@ -1188,8 +1188,11 @@ void R_ReCreateWorldReferences( void );
 
 void R_CreateEntityRefs( idRenderEntityLocal *def );
 void R_CreateLightRefs( idRenderLightLocal *light );
+bool R_IsVitaViewFlashlight( const idRenderLightLocal *light );
+bool R_PrepareVitaFlashlightInteractions( idRenderLightLocal *light );
 
 void R_DeriveLightData( idRenderLightLocal *light );
+void R_FreeLightDefReferences( idRenderLightLocal *light );
 void R_FreeLightDefDerivedData( idRenderLightLocal *light );
 void R_CheckForEntityDefsUsingModel( idRenderModel *model );
 

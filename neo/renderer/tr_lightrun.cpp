@@ -435,6 +435,39 @@ R_CreateLightRefs
 =================
 */
 #define	MAX_LIGHT_VERTS	40
+
+bool R_IsVitaViewFlashlight( const idRenderLightLocal *light ) {
+#ifdef __vita__
+	return !light->parms.pointLight && light->parms.allowLightInViewID != 0 &&
+		light->parms.lightId >= 100 && light->parms.lightId < 200;
+#else
+	return false;
+#endif
+}
+
+bool R_PrepareVitaFlashlightInteractions( idRenderLightLocal *light ) {
+#ifdef __vita__
+	for ( idInteraction *interaction = light->firstInteraction; interaction != NULL; interaction = interaction->lightNext ) {
+		for ( int i = 0; interaction->surfaces != NULL && i < interaction->numSurfaces; ++i ) {
+			if ( interaction->surfaces[i].shadowTris != NULL ) {
+				return false;
+			}
+		}
+	}
+
+	for ( idInteraction *interaction = light->firstInteraction; interaction != NULL; ) {
+		idInteraction *next = interaction->lightNext;
+		if ( interaction->IsEmpty() ) {
+			interaction->UnlinkAndFree();
+		}
+		interaction = next;
+	}
+	return true;
+#else
+	return false;
+#endif
+}
+
 void R_CreateLightRefs( idRenderLightLocal *light ) {
 	idVec3	points[MAX_LIGHT_VERTS];
 	int		i;
@@ -474,7 +507,11 @@ void R_CreateLightRefs( idRenderLightLocal *light ) {
 	// we can limit the area references to those visible through the portals from the light center.
 	// We can't do this in the normal case, because shadows are cast from back facing triangles, which
 	// may be in areas not directly visible to the light projection center.
-	if ( light->parms.prelightModel && r_useLightPortalFlow.GetBool() && light->lightShader->LightCastsShadows() ) {
+	if ( ( light->parms.prelightModel
+#ifdef __vita__
+			|| R_IsVitaViewFlashlight( light )
+#endif
+		) && r_useLightPortalFlow.GetBool() && light->lightShader->LightCastsShadows() ) {
 		light->world->FlowLightThroughPortals( light );
 	} else {
 		// push these points down the BSP tree into areas
@@ -584,16 +621,20 @@ Frees all references and lit surfaces from the light
 ====================
 */
 void R_FreeLightDefDerivedData( idRenderLightLocal *ldef ) {
+	// free all the interactions
+	while ( ldef->firstInteraction != NULL ) {
+		ldef->firstInteraction->UnlinkAndFree();
+	}
+
+	R_FreeLightDefReferences( ldef );
+}
+
+void R_FreeLightDefReferences( idRenderLightLocal *ldef ) {
 	areaReference_t	*lref, *nextRef;
 
 	// rmove any portal fog references
 	for ( doublePortal_t *dp = ldef->foggedPortals ; dp ; dp = dp->nextFoggedPortal ) {
 		dp->fogLight = NULL;
-	}
-
-	// free all the interactions
-	while ( ldef->firstInteraction != NULL ) {
-		ldef->firstInteraction->UnlinkAndFree();
 	}
 
 	// free all the references to the light

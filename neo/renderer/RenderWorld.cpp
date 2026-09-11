@@ -414,7 +414,24 @@ void idRenderWorldLocal::UpdateLightDef( qhandle_t lightHandle, const renderLigh
 		} else {
 			// if we are updating shadows, the prelight model is no longer valid
 			light->lightHasMoved = true;
-			R_FreeLightDefDerivedData( light );
+			bool preserveInteractions = false;
+#ifdef __vita__
+			preserveInteractions = R_IsVitaViewFlashlight( light ) && !rlight->pointLight &&
+				light->parms.allowLightInViewID == rlight->allowLightInViewID &&
+				light->parms.suppressLightInViewID == rlight->suppressLightInViewID &&
+				light->parms.noSpecular == rlight->noSpecular &&
+				light->parms.parallel == rlight->parallel &&
+				light->parms.lightRadius == rlight->lightRadius &&
+				light->parms.lightCenter == rlight->lightCenter &&
+				light->parms.shader == rlight->shader &&
+				light->parms.prelightModel == rlight->prelightModel &&
+				R_PrepareVitaFlashlightInteractions( light );
+#endif
+			if ( preserveInteractions ) {
+				R_FreeLightDefReferences( light );
+			} else {
+				R_FreeLightDefDerivedData( light );
+			}
 		}
 	} else {
 		// create a new one
