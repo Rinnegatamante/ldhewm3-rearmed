@@ -84,6 +84,7 @@ public:
     virtual void VPCALL UntransformJoints(idJointMat*jm,const int*parents,const int f,const int l);
     virtual void VPCALL TransformVerts(idDrawVert*verts,const int nv,const idJointMat*joints,
                                         const idVec4*weights,const int*index,const int numWeights);
+    virtual void VPCALL DeriveUnsmoothedTangents(idDrawVert*verts,const dominantTri_s*dominantTris,const int numVerts);
 
     virtual int  VPCALL CreateShadowCache(idVec4*vc,int*vr,const idVec3&lo,const idDrawVert*v,const int n);
     virtual int  VPCALL CreateVertexProgramShadowCache(idVec4*vc,const idDrawVert*v,const int n);

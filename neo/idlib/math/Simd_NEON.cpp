@@ -84,6 +84,18 @@ static inline __attribute__((always_inline)) uint8x8_t neon_cmp_bytes(uint32x4_t
     return vmovn_u16(vcombine_u16(vmovn_u32(low), vmovn_u32(high)));
 }
 
+static inline __attribute__((always_inline)) void neon_transpose4(float32x4_t r0, float32x4_t r1,
+                                                                  float32x4_t r2, float32x4_t r3,
+                                                                  float32x4_t &c0, float32x4_t &c1,
+                                                                  float32x4_t &c2, float32x4_t &c3) {
+    const float32x4x2_t t01 = vtrnq_f32(r0, r1);
+    const float32x4x2_t t23 = vtrnq_f32(r2, r3);
+    c0 = vcombine_f32(vget_low_f32(t01.val[0]), vget_low_f32(t23.val[0]));
+    c1 = vcombine_f32(vget_low_f32(t01.val[1]), vget_low_f32(t23.val[1]));
+    c2 = vcombine_f32(vget_high_f32(t01.val[0]), vget_high_f32(t23.val[0]));
+    c3 = vcombine_f32(vget_high_f32(t01.val[1]), vget_high_f32(t23.val[1]));
+}
+
 const char* idSIMD_NEON::GetName(void) const { return "NEON"; }
 
 void VPCALL idSIMD_NEON::Add(float*d,const float c,const float*s,const int n){
@@ -400,6 +412,71 @@ void VPCALL idSIMD_NEON::TransformVerts(idDrawVert*verts,const int nv,
         }
         ++j;
         verts[i].xyz=r;
+    }
+}
+
+void VPCALL idSIMD_NEON::DeriveUnsmoothedTangents(idDrawVert*verts,
+                                                    const dominantTri_s*dominantTris,
+                                                    const int numVerts){
+    int i=0;
+    for(;i<=numVerts-4;i+=4){
+        const dominantTri_s &d0=dominantTris[i+0],&d1=dominantTris[i+1];
+        const dominantTri_s &d2=dominantTris[i+2],&d3=dominantTris[i+3];
+        const float*a0=verts[i+0].xyz.ToFloatPtr(),*a1=verts[i+1].xyz.ToFloatPtr();
+        const float*a2=verts[i+2].xyz.ToFloatPtr(),*a3=verts[i+3].xyz.ToFloatPtr();
+        const float*b0=verts[d0.v2].xyz.ToFloatPtr(),*b1=verts[d1.v2].xyz.ToFloatPtr();
+        const float*b2=verts[d2.v2].xyz.ToFloatPtr(),*b3=verts[d3.v2].xyz.ToFloatPtr();
+        const float*c0=verts[d0.v3].xyz.ToFloatPtr(),*c1=verts[d1.v3].xyz.ToFloatPtr();
+        const float*c2=verts[d2.v3].xyz.ToFloatPtr(),*c3=verts[d3.v3].xyz.ToFloatPtr();
+
+        float32x4_t ax,ay,az,unused,bx,by,bz,cx,cy,cz;
+        neon_transpose4(vld1q_f32(a0),vld1q_f32(a1),vld1q_f32(a2),vld1q_f32(a3),ax,ay,az,unused);
+        neon_transpose4(vld1q_f32(b0),vld1q_f32(b1),vld1q_f32(b2),vld1q_f32(b3),bx,by,bz,unused);
+        neon_transpose4(vld1q_f32(c0),vld1q_f32(c1),vld1q_f32(c2),vld1q_f32(c3),cx,cy,cz,unused);
+
+        const float32x4_t x0=vsubq_f32(bx,ax),y0=vsubq_f32(by,ay),z0=vsubq_f32(bz,az);
+        const float32x4_t x1=vsubq_f32(cx,ax),y1=vsubq_f32(cy,ay),z1=vsubq_f32(cz,az);
+        const float32x4_t sy0=make_f32x4(b0[4]-a0[4],b1[4]-a1[4],b2[4]-a2[4],b3[4]-a3[4]);
+        const float32x4_t sy1=make_f32x4(c0[4]-a0[4],c1[4]-a1[4],c2[4]-a2[4],c3[4]-a3[4]);
+        const float32x4_t ns=make_f32x4(d0.normalizationScale[2],d1.normalizationScale[2],d2.normalizationScale[2],d3.normalizationScale[2]);
+        const float32x4_t ts=make_f32x4(d0.normalizationScale[0],d1.normalizationScale[0],d2.normalizationScale[0],d3.normalizationScale[0]);
+        const float32x4_t bs=make_f32x4(d0.normalizationScale[1],d1.normalizationScale[1],d2.normalizationScale[1],d3.normalizationScale[1]);
+
+        const float32x4_t nx=vmulq_f32(ns,vsubq_f32(vmulq_f32(y1,z0),vmulq_f32(z1,y0)));
+        const float32x4_t ny=vmulq_f32(ns,vsubq_f32(vmulq_f32(z1,x0),vmulq_f32(x1,z0)));
+        const float32x4_t nz=vmulq_f32(ns,vsubq_f32(vmulq_f32(x1,y0),vmulq_f32(y1,x0)));
+        const float32x4_t tx=vmulq_f32(ts,vsubq_f32(vmulq_f32(x0,sy1),vmulq_f32(sy0,x1)));
+        const float32x4_t ty=vmulq_f32(ts,vsubq_f32(vmulq_f32(y0,sy1),vmulq_f32(sy0,y1)));
+        const float32x4_t tz=vmulq_f32(ts,vsubq_f32(vmulq_f32(z0,sy1),vmulq_f32(sy0,z1)));
+        const float32x4_t ux=vmulq_f32(bs,vsubq_f32(vmulq_f32(nz,ty),vmulq_f32(ny,tz)));
+        const float32x4_t uy=vmulq_f32(bs,vsubq_f32(vmulq_f32(nx,tz),vmulq_f32(nz,tx)));
+        const float32x4_t uz=vmulq_f32(bs,vsubq_f32(vmulq_f32(ny,tx),vmulq_f32(nx,ty)));
+
+        float32x4_t o0,o1,o2,o3;
+        neon_transpose4(nx,ny,nz,tx,o0,o1,o2,o3);
+        vst1q_f32(verts[i+0].normal.ToFloatPtr(),o0);
+        vst1q_f32(verts[i+1].normal.ToFloatPtr(),o1);
+        vst1q_f32(verts[i+2].normal.ToFloatPtr(),o2);
+        vst1q_f32(verts[i+3].normal.ToFloatPtr(),o3);
+        neon_transpose4(ty,tz,ux,uy,o0,o1,o2,o3);
+        vst1q_f32(&verts[i+0].tangents[0][1],o0);
+        vst1q_f32(&verts[i+1].tangents[0][1],o1);
+        vst1q_f32(&verts[i+2].tangents[0][1],o2);
+        vst1q_f32(&verts[i+3].tangents[0][1],o3);
+        verts[i+0].tangents[1][2]=vgetq_lane_f32(uz,0);
+        verts[i+1].tangents[1][2]=vgetq_lane_f32(uz,1);
+        verts[i+2].tangents[1][2]=vgetq_lane_f32(uz,2);
+        verts[i+3].tangents[1][2]=vgetq_lane_f32(uz,3);
+    }
+    for(;i<numVerts;++i){
+        idDrawVert&a=verts[i];
+        const idDrawVert&b=verts[dominantTris[i].v2],&c=verts[dominantTris[i].v3];
+        const idVec3 e0=b.xyz-a.xyz,e1=c.xyz-a.xyz;
+        const dominantTri_s&d=dominantTris[i];
+        a.normal=d.normalizationScale[2]*idVec3(e1.y*e0.z-e1.z*e0.y,e1.z*e0.x-e1.x*e0.z,e1.x*e0.y-e1.y*e0.x);
+        const float sy0=b.st.y-a.st.y,sy1=c.st.y-a.st.y;
+        a.tangents[0]=d.normalizationScale[0]*idVec3(e0.x*sy1-sy0*e1.x,e0.y*sy1-sy0*e1.y,e0.z*sy1-sy0*e1.z);
+        a.tangents[1]=d.normalizationScale[1]*idVec3(a.normal.z*a.tangents[0].y-a.normal.y*a.tangents[0].z,a.normal.x*a.tangents[0].z-a.normal.z*a.tangents[0].x,a.normal.y*a.tangents[0].x-a.normal.x*a.tangents[0].y);
     }
 }
 
