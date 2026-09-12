@@ -36,6 +36,10 @@ If you have questions concerning this license or the applicable additional terms
 
 #include "ui/UserInterfaceLocal.h"
 
+#ifdef VITA
+#include "ui/EditWindow.h"
+#endif
+
 extern idCVar r_skipGuiShaders;		// 1 = don't render any gui elements on surfaces
 extern idCVar r_scaleMenusTo43; // DG: for the "scale menus to 4:3" hack
 
@@ -408,7 +412,11 @@ void idUserInterfaceLocal::Redraw( int _time ) {
 	if ( !loading && desktop ) {
 		time = _time;
 		uiManagerLocal.dc.PushClipRect( uiManagerLocal.screenRect );
-		desktop->Redraw( 0, 0 );
+		float yOffset = 0.0f;
+#ifdef VITA
+		yOffset = idEditWindow::GetActiveVitaImeYOffset();
+#endif
+		desktop->Redraw( 0, yOffset );
 		uiManagerLocal.dc.PopClipRect();
 	}
 }

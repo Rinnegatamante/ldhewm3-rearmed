@@ -46,6 +46,10 @@ public:
 	virtual const char *HandleEvent( const sysEvent_t *event, bool *updateVisuals );
 	virtual void		PostParse();
 	virtual void		GainFocus();
+	virtual void		LoseFocus();
+#ifdef VITA
+	static float		GetActiveVitaImeYOffset();
+#endif
 	virtual size_t		Allocated(){return idWindow::Allocated();};
 
 	virtual idWinVar *	GetWinVarByName(const char *_name, bool winLookup = false, drawWin_t** owner = NULL );
@@ -67,6 +71,9 @@ private:
 
 	void				CommonInit();
 	void				EnsureCursorVisible();
+#ifdef VITA
+	void				UpdateVitaImeOffset();
+#endif
 	void				InitScroller( bool horizontal );
 
 	int					maxChars;
@@ -84,6 +91,11 @@ private:
 	int					textIndex;
 	int					lastTextLength;
 	bool				forceScroll;
+#ifdef VITA
+	static idEditWindow *vitaActiveEdit;
+	float				vitaImeYOffset;
+	bool				vitaImeOffsetValid;
+#endif
 	idWinBool			password;
 
 	idWinStr			cvarStr;

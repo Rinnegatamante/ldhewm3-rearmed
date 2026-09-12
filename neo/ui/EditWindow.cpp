@@ -36,6 +36,17 @@ If you have questions concerning this license or the applicable additional terms
 
 #include "ui/EditWindow.h"
 
+#ifdef VITA
+#include <SDL.h>
+
+idEditWindow *idEditWindow::vitaActiveEdit = NULL;
+
+static bool VitaIsScreenKeyboardShown() {
+	SDL_Window *window = SDL_GetKeyboardFocus();
+	return window != NULL && SDL_IsScreenKeyboardShown( window );
+}
+#endif
+
 bool idEditWindow::ParseInternalVar( const char *_name, idParser *src ) {
 	if ( idStr::Icmp( _name, "maxchars" ) == 0) {
 		maxChars = src->ParseInt();
@@ -102,6 +113,10 @@ void idEditWindow::CommonInit() {
 	sizeBias = 0;
 	lastTextLength = 0;
 	forceScroll = false;
+#ifdef VITA
+	vitaImeYOffset = 0.0f;
+	vitaImeOffsetValid = false;
+#endif
 	password = false;
 	cvar = NULL;
 	liveUpdate = true;
@@ -123,15 +138,64 @@ idEditWindow::idEditWindow( idUserInterfaceLocal *g ) : idWindow(g) {
 }
 
 idEditWindow::~idEditWindow() {
-
+#ifdef VITA
+	if ( vitaActiveEdit == this ) {
+		vitaActiveEdit = NULL;
+	}
+#endif
 }
+
+#ifdef VITA
+void idEditWindow::UpdateVitaImeOffset() {
+	static const float imeSafeBottom = 190.0f;
+	const float bottom = actualY + drawRect.h;
+	vitaImeYOffset = ( bottom > imeSafeBottom ) ? ( imeSafeBottom - bottom ) : 0.0f;
+	vitaImeOffsetValid = true;
+}
+
+float idEditWindow::GetActiveVitaImeYOffset() {
+	if ( vitaActiveEdit == NULL || !VitaIsScreenKeyboardShown() ) {
+		return 0.0f;
+	}
+	return vitaActiveEdit->vitaImeOffsetValid ? vitaActiveEdit->vitaImeYOffset : 0.0f;
+}
+#endif
 
 void idEditWindow::GainFocus() {
 	cursorPos = text.Length();
 	EnsureCursorVisible();
+#ifdef VITA
+	vitaImeYOffset = 0.0f;
+	vitaImeOffsetValid = false;
+	if ( !readonly ) {
+		vitaActiveEdit = this;
+		if ( !VitaIsScreenKeyboardShown() ) {
+			SDL_StartTextInput();
+		}
+	}
+#endif
+}
+
+void idEditWindow::LoseFocus() {
+#ifdef VITA
+	vitaImeYOffset = 0.0f;
+	vitaImeOffsetValid = false;
+	if ( vitaActiveEdit == this ) {
+		vitaActiveEdit = NULL;
+	}
+	if ( SDL_IsTextInputActive() ) {
+		SDL_StopTextInput();
+	}
+#endif
+	idWindow::LoseFocus();
 }
 
 void idEditWindow::Draw( int time, float x, float y ) {
+#ifdef VITA
+	if ( vitaActiveEdit == this && VitaIsScreenKeyboardShown() && !vitaImeOffsetValid ) {
+		UpdateVitaImeOffset();
+	}
+#endif
 	idVec4 color = foreColor;
 
 	UpdateCvar( true );
@@ -580,7 +644,29 @@ void idEditWindow::Activate(bool activate, idStr &act) {
 	if ( activate ) {
 		UpdateCvar( true, true );
 		EnsureCursorVisible();
+#ifdef VITA
+		if ( ( flags & WIN_FOCUS ) && !readonly ) {
+			vitaImeYOffset = 0.0f;
+			vitaImeOffsetValid = false;
+			vitaActiveEdit = this;
+			if ( !VitaIsScreenKeyboardShown() ) {
+				SDL_StartTextInput();
+			}
+		}
+#endif
 	}
+#ifdef VITA
+	else if ( flags & WIN_FOCUS ) {
+		vitaImeYOffset = 0.0f;
+		vitaImeOffsetValid = false;
+		if ( vitaActiveEdit == this ) {
+			vitaActiveEdit = NULL;
+		}
+		if ( SDL_IsTextInputActive() ) {
+			SDL_StopTextInput();
+		}
+	}
+#endif
 }
 
 /*

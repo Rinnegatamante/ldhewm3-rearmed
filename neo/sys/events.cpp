@@ -564,6 +564,13 @@ void Sys_GrabMouseCursor(bool grabIt) {
 Sys_GetEvent
 ================
 */
+#ifdef VITA
+static bool VitaIsScreenKeyboardShown() {
+	SDL_Window *window = SDL_GetKeyboardFocus();
+	return window != NULL && SDL_IsScreenKeyboardShown( window );
+}
+#endif
+
 sysEvent_t Sys_GetEvent() {
 	SDL_Event ev;
 	sysEvent_t res = { };
@@ -667,6 +674,13 @@ sysEvent_t Sys_GetEvent() {
 			}
 		}
 
+#ifdef VITA
+			if ( VitaIsScreenKeyboardShown() &&
+				( key == K_UPARROW || key == K_DOWNARROW || key == K_LEFTARROW || key == K_RIGHTARROW ) ) {
+				continue;
+			}
+#endif
+
 			res.evType = SE_KEY;
 			res.evValue = key;
 			res.evValue2 = ev.key.state == SDL_PRESSED ? 1 : 0;
@@ -703,6 +717,12 @@ sysEvent_t Sys_GetEvent() {
 		case SDL_CONTROLLERBUTTONUP:
 			key = JoyToKey(ev.cbutton.button);
 			if (!key) continue;
+#ifdef VITA
+			if ( VitaIsScreenKeyboardShown() &&
+				( key == K_UPARROW || key == K_DOWNARROW || key == K_LEFTARROW || key == K_RIGHTARROW ) ) {
+				continue;
+			}
+#endif
 			res.evType = SE_KEY;
 			res.evValue = key;
 			res.evValue2 = ev.type == SDL_CONTROLLERBUTTONDOWN ? 1 : 0;
