@@ -2793,7 +2793,10 @@ static unsigned int AsyncTimer(unsigned int interval, void *) {
 	common->Async();
 	Sys_TriggerEvent(TRIGGER_EVENT_ONE);
 
-	// calculate the next interval to get as close to 60fps as possible
+	if ( !com_preciseTic.GetBool() ) {
+		return USERCMD_MSEC;
+	}
+
 	unsigned int now = SDL_GetTicks();
 	unsigned int tick = com_ticNumber * USERCMD_MSEC;
 	// FIXME: this is pretty broken and basically always returns 1 because now now is much bigger than tic
