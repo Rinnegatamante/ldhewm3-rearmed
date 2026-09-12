@@ -719,7 +719,8 @@ sysEvent_t Sys_GetEvent() {
 			if (!key) continue;
 #ifdef VITA
 			if ( VitaIsScreenKeyboardShown() &&
-				( key == K_UPARROW || key == K_DOWNARROW || key == K_LEFTARROW || key == K_RIGHTARROW ) ) {
+				( ev.cbutton.button == SDL_CONTROLLER_BUTTON_A ||
+				  key == K_UPARROW || key == K_DOWNARROW || key == K_LEFTARROW || key == K_RIGHTARROW ) ) {
 				continue;
 			}
 #endif
