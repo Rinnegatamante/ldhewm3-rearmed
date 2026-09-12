@@ -44,6 +44,9 @@ If you have questions concerning this license or the applicable additional terms
 extern "C" void vglSwapBuffers(GLboolean has_commondialog);
 extern "C" GLboolean vglInitWithCustomThreshold(int pool_size, int width, int height, int ram_threshold, int cdram_threshold, int phycont_threshold, int cdlg_threshold, SceGxmMultisampleMode msaa);
 extern "C" void *vglGetProcAddress(const char *name);
+extern "C" void vglSetShaderCachePath(const char *path);
+extern "C" void vglSetCircularPoolSize(uint32_t size);
+extern "C" void vglSetParamBufferSize(uint32_t size);
 #endif
 
 idCVar in_nograb("in_nograb", "0", CVAR_SYSTEM | CVAR_NOCHEAT, "prevents input grabbing");
@@ -169,13 +172,17 @@ bool GLimp_Init(glimpParms_t parms) {
 
 	glConfig.isFullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) == SDL_WINDOW_FULLSCREEN;
 #else
-	window = SDL_CreateWindow("dummy", 45, 0, 960, 544, SDL_WINDOW_FULLSCREEN);
-
 	glConfig.vidWidthReal = 960;
 	glConfig.vidHeightReal = 544;
 	glConfig.isFullscreen = true;
+	vglSetShaderCachePath("ux0:data/dhewm3/shader_cache");
+	vglSetCircularPoolSize(3 * 1024 * 1024);
+	vglSetParamBufferSize(14 * 1024 * 1024);
 	vglInitWithCustomThreshold(0, glConfig.vidWidthReal, glConfig.vidHeightReal, 10 * 1024 * 1024, 0, 0, 0, SCE_GXM_MULTISAMPLE_4X);
 	Sys_EnableVitaGLAllocators();
+	
+	SDL_Init(SDL_INIT_VIDEO);
+	window = SDL_CreateWindow("dummy", 45, 0, 960, 544, SDL_WINDOW_FULLSCREEN);
 #endif
 	
 	//common->Printf("Using %d color bits, %d depth, %d stencil display\n",

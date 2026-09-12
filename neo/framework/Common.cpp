@@ -2913,7 +2913,11 @@ void idCommonLocal::Init( int argc, char **argv ) {
 #endif
 #endif
 
+#ifdef __vita__
+	if (SDL_Init(SDL_INIT_TIMER | SDL_INIT_JOYSTICK)) // init joystick to work around SDL 2.0.9 bug #4391
+#else
 	if (SDL_Init(SDL_INIT_TIMER | SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) // init joystick to work around SDL 2.0.9 bug #4391
+#endif
 		Sys_Error("Error while initializing SDL: %s", SDL_GetError());
 
 	Sys_InitThreads();
