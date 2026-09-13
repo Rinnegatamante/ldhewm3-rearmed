@@ -401,17 +401,27 @@ void VPCALL idSIMD_NEON::TransformVerts(idDrawVert*verts,const int nv,
                                           const int /*numWeights*/){
     const byte*jp=reinterpret_cast<const byte*>(joints); int j=0;
     for(int i=0;i<nv;++i){
-        const float*wf=weights[j].ToFloatPtr();
-        const idJointMat&M=*reinterpret_cast<const idJointMat*>(jp+index[j*2]);
-        idVec3 r=M*idVec4(wf[0],wf[1],wf[2],wf[3]);
+        const float*w=weights[j].ToFloatPtr();
+        const float*m=reinterpret_cast<const idJointMat*>(jp+index[j*2])->ToFloatPtr();
+        const float32x4_t weight=vld1q_f32(w);
+        float32x4_t x=vmulq_f32(vld1q_f32(m),weight);
+        float32x4_t y=vmulq_f32(vld1q_f32(m+4),weight);
+        float32x4_t z=vmulq_f32(vld1q_f32(m+8),weight);
         while(index[j*2+1]==0){
             ++j;
-            const float*wf2=weights[j].ToFloatPtr();
-            const idJointMat&M2=*reinterpret_cast<const idJointMat*>(jp+index[j*2]);
-            r+=M2*idVec4(wf2[0],wf2[1],wf2[2],wf2[3]);
+            w=weights[j].ToFloatPtr();
+            m=reinterpret_cast<const idJointMat*>(jp+index[j*2])->ToFloatPtr();
+            const float32x4_t nextWeight=vld1q_f32(w);
+            x=vmlaq_f32(x,vld1q_f32(m),nextWeight);
+            y=vmlaq_f32(y,vld1q_f32(m+4),nextWeight);
+            z=vmlaq_f32(z,vld1q_f32(m+8),nextWeight);
         }
         ++j;
-        verts[i].xyz=r;
+        const float32x2_t xy=vpadd_f32(vadd_f32(vget_low_f32(x),vget_high_f32(x)),vadd_f32(vget_low_f32(y),vget_high_f32(y)));
+        const float32x2_t zz=vadd_f32(vget_low_f32(z),vget_high_f32(z));
+        const float32x2_t zsum=vpadd_f32(zz,zz);
+        vst1_f32(verts[i].xyz.ToFloatPtr(),xy);
+        vst1_lane_f32(verts[i].xyz.ToFloatPtr()+2,zsum,0);
     }
 }
 
