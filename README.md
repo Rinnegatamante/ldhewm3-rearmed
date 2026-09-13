@@ -24,7 +24,6 @@ Current focus is on a PSVita dedicated build.
 - Improved the graphics backend pipeline to use less memory and use vitaGL more efficiently.
 - Added an experimental frameskip option that can be enabled via com_frameSkip option in the ini.
 - Added r_maxLights option to reduce the max number of active lights at the same time to greatly reduce CPU workload. Defaults to 8.
-- Enabled LTO and made more small functions properly get inlined.
 - Implemented native NEON usage for math operations.
 - Made so that entities of all types that reside in deactivated areas of a map or behind portals get set in dormant state to not execute their physics, animation and AI steps every frame.
 - Optimized the codepath that handles entities area updates.
