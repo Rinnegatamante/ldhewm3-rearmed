@@ -902,6 +902,9 @@ void idWeapon::GetWeaponDef( const char *objectname, int ammoinclip ) {
 
 	muzzleFlash.pointLight								= flashPointLight;
 	muzzleFlash.shader									= flashShader;
+#ifdef __vita__
+	muzzleFlash.noShadows								= true;
+#endif
 	muzzleFlash.shaderParms[ SHADERPARM_RED ]			= flashColor[0];
 	muzzleFlash.shaderParms[ SHADERPARM_GREEN ]			= flashColor[1];
 	muzzleFlash.shaderParms[ SHADERPARM_BLUE ]			= flashColor[2];
@@ -1985,13 +1988,15 @@ void idWeapon::PresentWeapon( bool showViewModel ) {
 
 	// update the muzzle flash light, so it moves with the gun
 	if ( muzzleFlashHandle != -1 ) {
-		UpdateFlashPosition();
-		gameRenderWorld->UpdateLightDef( muzzleFlashHandle, &muzzleFlash );
+		if ( lightOn ) {
+			UpdateFlashPosition();
+			gameRenderWorld->UpdateLightDef( muzzleFlashHandle, &muzzleFlash );
+		}
 		const bool needsWorldMuzzleFlash = gameLocal.isMultiplayer || pm_thirdPerson.GetBool() || g_showPlayerShadow.GetBool();
 		if ( needsWorldMuzzleFlash ) {
 			if ( worldMuzzleFlashHandle == -1 ) {
 				worldMuzzleFlashHandle = gameRenderWorld->AddLightDef( &worldMuzzleFlash );
-			} else {
+			} else if ( lightOn ) {
 				gameRenderWorld->UpdateLightDef( worldMuzzleFlashHandle, &worldMuzzleFlash );
 			}
 		} else if ( worldMuzzleFlashHandle != -1 ) {
