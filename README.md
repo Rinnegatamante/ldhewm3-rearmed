@@ -7,6 +7,10 @@ Current focus is on a PSVita dedicated build.
 
 `HAVE_WRAPPED_ALLOCATORS=1 NO_DEBUG=1 DRAW_SPEEDHACK=1 CIRCULAR_POOL_SPEEDHACK=1 HAVE_SHADER_CACHE=1 DEPTH_STENCIL_HACK=1`
 
+## Known Issues
+
+Some moving entity can get stuck (an example is the bridge in the early section of the game you have to cross to progress). If that happens, save a game and load it, it will unstuck the entity.
+
 ## Changelog
 
 ### v.0.5
