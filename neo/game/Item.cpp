@@ -27,6 +27,7 @@ If you have questions concerning this license or the applicable additional terms
 */
 
 #include "sys/platform.h"
+#include "framework/FileSystem.h"
 #include "renderer/RenderSystem.h"
 
 #include "gamesys/SysCvar.h"
@@ -664,6 +665,27 @@ idObjective::idObjective() {
 	playerPos.Zero();
 }
 
+static bool ObjectiveScreenshotAvailable( const idDict &spawnArgs ) {
+	const char *screenshot = spawnArgs.GetString( "screenshot" );
+	if ( !screenshot[0] ) {
+		return false;
+	}
+
+	idStr shotName = gameLocal.GetMapName();
+	shotName.StripFileExtension();
+	shotName += "/";
+	shotName += screenshot;
+	shotName.SetFileExtension( ".tga" );
+	if ( idLib::fileSystem->ReadFile( shotName, NULL, NULL ) >= 0 ) {
+		return true;
+	}
+
+	idStr ddsName = "dds/";
+	ddsName += shotName;
+	ddsName.SetFileExtension( ".dds" );
+	return idLib::fileSystem->ReadFile( ddsName, NULL, NULL ) >= 0;
+}
+
 /*
 ================
 idObjective::Save
@@ -680,7 +702,9 @@ idObjective::Restore
 */
 void idObjective::Restore( idRestoreGame *savefile ) {
 	savefile->ReadVec3( playerPos );
-	PostEventMS( &EV_CamShot, 250 );
+	if ( !ObjectiveScreenshotAvailable( spawnArgs ) ) {
+		PostEventMS( &EV_CamShot, 250 );
+	}
 }
 
 /*
@@ -690,7 +714,9 @@ idObjective::Spawn
 */
 void idObjective::Spawn( void ) {
 	Hide();
-	PostEventMS( &EV_CamShot, 250 );
+	if ( !ObjectiveScreenshotAvailable( spawnArgs ) ) {
+		PostEventMS( &EV_CamShot, 250 );
+	}
 }
 
 /*
