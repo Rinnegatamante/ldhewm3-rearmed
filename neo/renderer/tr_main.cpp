@@ -30,6 +30,10 @@ If you have questions concerning this license or the applicable additional terms
 #include "sys/sse2neon.h"
 #endif
 
+#ifdef __vita__
+#include <arm_neon.h>
+#endif
+
 #include "sys/platform.h"
 #include "framework/Session.h"
 #include "renderer/RenderWorld_local.h"
@@ -825,6 +829,20 @@ myGlMultMatrix
 ==========================
 */
 void myGlMultMatrix( const float a[16], const float b[16], float out[16] ) {
+#ifdef __vita__
+	const float32x4_t b0 = vld1q_f32( b + 0 );
+	const float32x4_t b1 = vld1q_f32( b + 4 );
+	const float32x4_t b2 = vld1q_f32( b + 8 );
+	const float32x4_t b3 = vld1q_f32( b + 12 );
+	for ( int i = 0; i < 4; ++i ) {
+		const float *row = a + i * 4;
+		float32x4_t result = vmulq_n_f32( b0, row[0] );
+		result = vmlaq_n_f32( result, b1, row[1] );
+		result = vmlaq_n_f32( result, b2, row[2] );
+		result = vmlaq_n_f32( result, b3, row[3] );
+		vst1q_f32( out + i * 4, result );
+	}
+#else
 #if 0
 	int		i, j;
 
@@ -854,6 +872,7 @@ void myGlMultMatrix( const float a[16], const float b[16], float out[16] ) {
 	out[3*4+1] = a[3*4+0]*b[0*4+1] + a[3*4+1]*b[1*4+1] + a[3*4+2]*b[2*4+1] + a[3*4+3]*b[3*4+1];
 	out[3*4+2] = a[3*4+0]*b[0*4+2] + a[3*4+1]*b[1*4+2] + a[3*4+2]*b[2*4+2] + a[3*4+3]*b[3*4+2];
 	out[3*4+3] = a[3*4+0]*b[0*4+3] + a[3*4+1]*b[1*4+3] + a[3*4+2]*b[2*4+3] + a[3*4+3]*b[3*4+3];
+#endif
 #endif
 }
 
