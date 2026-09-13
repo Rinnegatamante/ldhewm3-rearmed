@@ -415,6 +415,127 @@ void VPCALL idSIMD_NEON::TransformVerts(idDrawVert*verts,const int nv,
     }
 }
 
+void VPCALL idSIMD_NEON::DeriveTriPlanes(idPlane*planes,const idDrawVert*verts,const int,const short*indexes,const int numIndexes){
+    int i=0;
+    for(;i+11<numIndexes;i+=12,planes+=4){
+        const idDrawVert *a[4],*b[4],*c[4];
+        for(int lane=0;lane<4;++lane){
+            a[lane]=verts+indexes[i+lane*3+0];
+            b[lane]=verts+indexes[i+lane*3+1];
+            c[lane]=verts+indexes[i+lane*3+2];
+        }
+        float32x4_t ax,ay,az,unused,bx,by,bz,cx,cy,cz;
+        neon_transpose4(vld1q_f32(a[0]->xyz.ToFloatPtr()),vld1q_f32(a[1]->xyz.ToFloatPtr()),vld1q_f32(a[2]->xyz.ToFloatPtr()),vld1q_f32(a[3]->xyz.ToFloatPtr()),ax,ay,az,unused);
+        neon_transpose4(vld1q_f32(b[0]->xyz.ToFloatPtr()),vld1q_f32(b[1]->xyz.ToFloatPtr()),vld1q_f32(b[2]->xyz.ToFloatPtr()),vld1q_f32(b[3]->xyz.ToFloatPtr()),bx,by,bz,unused);
+        neon_transpose4(vld1q_f32(c[0]->xyz.ToFloatPtr()),vld1q_f32(c[1]->xyz.ToFloatPtr()),vld1q_f32(c[2]->xyz.ToFloatPtr()),vld1q_f32(c[3]->xyz.ToFloatPtr()),cx,cy,cz,unused);
+        const float32x4_t x0=vsubq_f32(bx,ax),y0=vsubq_f32(by,ay),z0=vsubq_f32(bz,az);
+        const float32x4_t x1=vsubq_f32(cx,ax),y1=vsubq_f32(cy,ay),z1=vsubq_f32(cz,az);
+        float32x4_t nx=vsubq_f32(vmulq_f32(y1,z0),vmulq_f32(z1,y0));
+        float32x4_t ny=vsubq_f32(vmulq_f32(z1,x0),vmulq_f32(x1,z0));
+        float32x4_t nz=vsubq_f32(vmulq_f32(x1,y0),vmulq_f32(y1,x0));
+        const float32x4_t inv=neon_rsqrt(vmlaq_f32(vmlaq_f32(vmulq_f32(nx,nx),ny,ny),nz,nz));
+        nx=vmulq_f32(nx,inv); ny=vmulq_f32(ny,inv); nz=vmulq_f32(nz,inv);
+        const float32x4_t d=vnegq_f32(vmlaq_f32(vmlaq_f32(vmulq_f32(nx,ax),ny,ay),nz,az));
+        float32x4_t p0,p1,p2,p3;
+        neon_transpose4(nx,ny,nz,d,p0,p1,p2,p3);
+        vst1q_f32(planes[0].ToFloatPtr(),p0);
+        vst1q_f32(planes[1].ToFloatPtr(),p1);
+        vst1q_f32(planes[2].ToFloatPtr(),p2);
+        vst1q_f32(planes[3].ToFloatPtr(),p3);
+    }
+    for(;i<numIndexes;i+=3,++planes){
+        const idDrawVert&a=verts[indexes[i]],&b=verts[indexes[i+1]],&c=verts[indexes[i+2]];
+        idVec3 n=(c.xyz-a.xyz).Cross(b.xyz-a.xyz);
+        n*=idMath::RSqrt(n.LengthSqr());
+        planes->SetNormal(n);
+        planes->FitThroughPoint(a.xyz);
+    }
+}
+
+void VPCALL idSIMD_NEON::DeriveTangents(idPlane*planes,idDrawVert*verts,const int numVerts,const short*indexes,const int numIndexes){
+    bool*used=(bool*)_alloca16(numVerts*sizeof(bool));
+    memset(used,0,numVerts*sizeof(bool));
+    int i=0;
+    for(;i+11<numIndexes;i+=12,planes+=4){
+        idDrawVert *a[4],*b[4],*c[4];
+        for(int lane=0;lane<4;++lane){
+            a[lane]=verts+indexes[i+lane*3+0];
+            b[lane]=verts+indexes[i+lane*3+1];
+            c[lane]=verts+indexes[i+lane*3+2];
+        }
+        float32x4_t ax,ay,az,unused,bx,by,bz,cx,cy,cz;
+        neon_transpose4(vld1q_f32(a[0]->xyz.ToFloatPtr()),vld1q_f32(a[1]->xyz.ToFloatPtr()),vld1q_f32(a[2]->xyz.ToFloatPtr()),vld1q_f32(a[3]->xyz.ToFloatPtr()),ax,ay,az,unused);
+        neon_transpose4(vld1q_f32(b[0]->xyz.ToFloatPtr()),vld1q_f32(b[1]->xyz.ToFloatPtr()),vld1q_f32(b[2]->xyz.ToFloatPtr()),vld1q_f32(b[3]->xyz.ToFloatPtr()),bx,by,bz,unused);
+        neon_transpose4(vld1q_f32(c[0]->xyz.ToFloatPtr()),vld1q_f32(c[1]->xyz.ToFloatPtr()),vld1q_f32(c[2]->xyz.ToFloatPtr()),vld1q_f32(c[3]->xyz.ToFloatPtr()),cx,cy,cz,unused);
+        const float32x4_t x0=vsubq_f32(bx,ax),y0=vsubq_f32(by,ay),z0=vsubq_f32(bz,az);
+        const float32x4_t x1=vsubq_f32(cx,ax),y1=vsubq_f32(cy,ay),z1=vsubq_f32(cz,az);
+        const float32x4_t s0=make_f32x4(b[0]->st.x-a[0]->st.x,b[1]->st.x-a[1]->st.x,b[2]->st.x-a[2]->st.x,b[3]->st.x-a[3]->st.x);
+        const float32x4_t t0=make_f32x4(b[0]->st.y-a[0]->st.y,b[1]->st.y-a[1]->st.y,b[2]->st.y-a[2]->st.y,b[3]->st.y-a[3]->st.y);
+        const float32x4_t s1=make_f32x4(c[0]->st.x-a[0]->st.x,c[1]->st.x-a[1]->st.x,c[2]->st.x-a[2]->st.x,c[3]->st.x-a[3]->st.x);
+        const float32x4_t t1=make_f32x4(c[0]->st.y-a[0]->st.y,c[1]->st.y-a[1]->st.y,c[2]->st.y-a[2]->st.y,c[3]->st.y-a[3]->st.y);
+        float32x4_t nx=vsubq_f32(vmulq_f32(y1,z0),vmulq_f32(z1,y0));
+        float32x4_t ny=vsubq_f32(vmulq_f32(z1,x0),vmulq_f32(x1,z0));
+        float32x4_t nz=vsubq_f32(vmulq_f32(x1,y0),vmulq_f32(y1,x0));
+        float32x4_t inv=neon_rsqrt(vmlaq_f32(vmlaq_f32(vmulq_f32(nx,nx),ny,ny),nz,nz));
+        nx=vmulq_f32(nx,inv); ny=vmulq_f32(ny,inv); nz=vmulq_f32(nz,inv);
+        const float32x4_t area=vsubq_f32(vmulq_f32(s0,t1),vmulq_f32(t0,s1));
+        const uint32x4_t sign=vandq_u32(vreinterpretq_u32_f32(area),vdupq_n_u32(0x80000000u));
+        float32x4_t tx=vsubq_f32(vmulq_f32(x0,t1),vmulq_f32(t0,x1));
+        float32x4_t ty=vsubq_f32(vmulq_f32(y0,t1),vmulq_f32(t0,y1));
+        float32x4_t tz=vsubq_f32(vmulq_f32(z0,t1),vmulq_f32(t0,z1));
+        inv=vreinterpretq_f32_u32(veorq_u32(vreinterpretq_u32_f32(neon_rsqrt(vmlaq_f32(vmlaq_f32(vmulq_f32(tx,tx),ty,ty),tz,tz))),sign));
+        tx=vmulq_f32(tx,inv); ty=vmulq_f32(ty,inv); tz=vmulq_f32(tz,inv);
+        float32x4_t ux=vsubq_f32(vmulq_f32(s0,x1),vmulq_f32(x0,s1));
+        float32x4_t uy=vsubq_f32(vmulq_f32(s0,y1),vmulq_f32(y0,s1));
+        float32x4_t uz=vsubq_f32(vmulq_f32(s0,z1),vmulq_f32(z0,s1));
+        inv=vreinterpretq_f32_u32(veorq_u32(vreinterpretq_u32_f32(neon_rsqrt(vmlaq_f32(vmlaq_f32(vmulq_f32(ux,ux),uy,uy),uz,uz))),sign));
+        ux=vmulq_f32(ux,inv); uy=vmulq_f32(uy,inv); uz=vmulq_f32(uz,inv);
+        float32x4_t normals[4],tangents0[4],tangents1[4],planeVectors[4];
+        neon_transpose4(nx,ny,nz,vdupq_n_f32(0.0f),normals[0],normals[1],normals[2],normals[3]);
+        neon_transpose4(tx,ty,tz,vdupq_n_f32(0.0f),tangents0[0],tangents0[1],tangents0[2],tangents0[3]);
+        neon_transpose4(ux,uy,uz,vdupq_n_f32(0.0f),tangents1[0],tangents1[1],tangents1[2],tangents1[3]);
+        const float32x4_t d=vnegq_f32(vmlaq_f32(vmlaq_f32(vmulq_f32(nx,ax),ny,ay),nz,az));
+        neon_transpose4(nx,ny,nz,d,planeVectors[0],planeVectors[1],planeVectors[2],planeVectors[3]);
+        for(int lane=0;lane<4;++lane){
+            vst1q_f32(planes[lane].ToFloatPtr(),planeVectors[lane]);
+            float n[4],ta[4],tb[4];
+            vst1q_f32(n,normals[lane]); vst1q_f32(ta,tangents0[lane]); vst1q_f32(tb,tangents1[lane]);
+            const idVec3 normal(n[0],n[1],n[2]),tangent0(ta[0],ta[1],ta[2]),tangent1(tb[0],tb[1],tb[2]);
+            for(int vertex=0;vertex<3;++vertex){
+                const int vertNum=indexes[i+lane*3+vertex];
+                idDrawVert&drawVert=verts[vertNum];
+                if(used[vertNum]){
+                    drawVert.normal+=normal; drawVert.tangents[0]+=tangent0; drawVert.tangents[1]+=tangent1;
+                }else{
+                    drawVert.normal=normal; drawVert.tangents[0]=tangent0; drawVert.tangents[1]=tangent1; used[vertNum]=true;
+                }
+            }
+        }
+    }
+    for(;i<numIndexes;i+=3,++planes){
+        const int v0=indexes[i],v1=indexes[i+1],v2=indexes[i+2];
+        idDrawVert&a=verts[v0],&b=verts[v1],&c=verts[v2];
+        const idVec3 d0=b.xyz-a.xyz,d1=c.xyz-a.xyz;
+        idVec3 normal=d1.Cross(d0); normal*=idMath::RSqrt(normal.LengthSqr());
+        planes->SetNormal(normal); planes->FitThroughPoint(a.xyz);
+        const float s0=b.st.x-a.st.x,t0=b.st.y-a.st.y,s1=c.st.x-a.st.x,t1=c.st.y-a.st.y;
+        const float sign=(s0*t1-t0*s1)<0.0f?-1.0f:1.0f;
+        idVec3 tangent0(d0.x*t1-t0*d1.x,d0.y*t1-t0*d1.y,d0.z*t1-t0*d1.z);
+        tangent0*=sign*idMath::RSqrt(tangent0.LengthSqr());
+        idVec3 tangent1(s0*d1.x-d0.x*s1,s0*d1.y-d0.y*s1,s0*d1.z-d0.z*s1);
+        tangent1*=sign*idMath::RSqrt(tangent1.LengthSqr());
+        const int vertexNums[3]={v0,v1,v2};
+        for(int vertex=0;vertex<3;++vertex){
+            idDrawVert&drawVert=verts[vertexNums[vertex]];
+            if(used[vertexNums[vertex]]){
+                drawVert.normal+=normal; drawVert.tangents[0]+=tangent0; drawVert.tangents[1]+=tangent1;
+            }else{
+                drawVert.normal=normal; drawVert.tangents[0]=tangent0; drawVert.tangents[1]=tangent1; used[vertexNums[vertex]]=true;
+            }
+        }
+    }
+}
+
 void VPCALL idSIMD_NEON::DeriveUnsmoothedTangents(idDrawVert*verts,
                                                     const dominantTri_s*dominantTris,
                                                     const int numVerts){
