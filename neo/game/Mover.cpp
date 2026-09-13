@@ -59,6 +59,7 @@ const idEventDef EV_PartBlocked( "<partblocked>", "e" );
 const idEventDef EV_ReachedPos( "<reachedpos>", NULL );
 const idEventDef EV_ReachedAng( "<reachedang>", NULL );
 const idEventDef EV_PostRestore( "<postrestore>", "ddddd" );
+const idEventDef EV_PostRestoreMoverCallback( "<postrestoremovercallback>", NULL );
 const idEventDef EV_StopMoving( "stopMoving", NULL );
 const idEventDef EV_StopRotating( "stopRotating", NULL );
 const idEventDef EV_Speed( "speed", "f" );
@@ -99,6 +100,7 @@ CLASS_DECLARATION( idEntity, idMover )
 	EVENT( EV_ReachedPos,			idMover::Event_UpdateMove )
 	EVENT( EV_ReachedAng,			idMover::Event_UpdateRotation )
 	EVENT( EV_PostRestore,			idMover::Event_PostRestore )
+	EVENT( EV_PostRestoreMoverCallback,	idMover::Event_PostRestoreMoverCallback )
 	EVENT( EV_StopMoving,			idMover::Event_StopMoving )
 	EVENT( EV_StopRotating,			idMover::Event_StopRotating )
 	EVENT( EV_Speed,				idMover::Event_SetMoveSpeed )
@@ -300,6 +302,10 @@ void idMover::Restore( idRestoreGame *savefile ) {
 
 		PostEventMS( &EV_PostRestore, 0, starttime, totaltime, accel, decel, useAngles );
 	}
+
+	if ( move_thread || rotate_thread ) {
+		PostEventMS( &EV_PostRestoreMoverCallback, 0 );
+	}
 }
 
 /*
@@ -324,6 +330,42 @@ void idMover::Event_PostRestore( int start, int total, int accel, int decel, int
 
 	physicsObj.SetSpline( spline, accel, decel, ( useSplineAng != 0 ) );
 	physicsObj.SetLinearExtrapolation( EXTRAPOLATION_NONE, 0, 0, dest_position, vec3_origin, vec3_origin );
+}
+
+/*
+================
+idMover::Event_PostRestoreMoverCallback
+
+Repair a script waitFor that was saved after Vita mover throttling skipped
+the frame where the motion crossed its end time.
+================
+*/
+void idMover::Event_PostRestoreMoverCallback( void ) {
+	if ( move_thread ) {
+		idThread *thread = idThread::GetThread( move_thread );
+		const int endTime = physicsObj.GetLinearEndTime();
+		const bool reached = ( endTime > 0 && endTime <= gameLocal.time ) ||
+			( endTime <= 0 && physicsObj.IsAtRest() );
+
+		if ( !thread || !thread->IsWaitingFor( this ) ) {
+			move_thread = 0;
+		} else if ( reached ) {
+			ProcessEvent( &EV_ReachedPos );
+		}
+	}
+
+	if ( rotate_thread ) {
+		idThread *thread = idThread::GetThread( rotate_thread );
+		const int endTime = physicsObj.GetAngularEndTime();
+		const bool reached = ( endTime > 0 && endTime <= gameLocal.time ) ||
+			( endTime <= 0 && physicsObj.IsAtRest() );
+
+		if ( !thread || !thread->IsWaitingFor( this ) ) {
+			rotate_thread = 0;
+		} else if ( reached ) {
+			ProcessEvent( &EV_ReachedAng );
+		}
+	}
 }
 
 /*
@@ -388,10 +430,11 @@ void idMover::Think( void ) {
 		const int intervalFrames = gameLocal.InPlayerConnectedArea( this ) ? 2 : 4;
 		const int linearEndTime = physicsObj.GetLinearEndTime();
 		const int angularEndTime = physicsObj.GetAngularEndTime();
+		const bool pendingScriptCallback = move_thread != 0 || rotate_thread != 0;
 		const bool reachesEnd =
 			( linearEndTime > gameLocal.previousTime && linearEndTime <= gameLocal.time ) ||
 			( angularEndTime > gameLocal.previousTime && angularEndTime <= gameLocal.time );
-		if ( !reachesEnd && ( ( gameLocal.framenum + entityNumber ) & ( intervalFrames - 1 ) ) != 0 ) {
+		if ( !pendingScriptCallback && !reachesEnd && ( ( gameLocal.framenum + entityNumber ) & ( intervalFrames - 1 ) ) != 0 ) {
 			return;
 		}
 	}
