@@ -307,8 +307,8 @@ PREFIX  = arm-vita-eabi
 CC      = $(PREFIX)-gcc
 CXX      = $(PREFIX)-g++
 CPPFLAGS += -MMD -MP
-CFLAGS  = -fsigned-char -Wl,-q,--wrap,fopen,--wrap,opendir,--wrap,open,--wrap,access,--wrap,malloc,--wrap,memalign,--wrap,free,--wrap,calloc,--wrap,realloc \
-	-O3 -g -flto -fno-optimize-sibling-calls -DNODLL -DNOEFX -D__unix__ -DSDL_DISABLE_XMMINTRIN_H \
+CFLAGS  = -fsigned-char -Wl,-q,--pic-veneer,--wrap,fopen,--wrap,opendir,--wrap,open,--wrap,access,--wrap,malloc,--wrap,memalign,--wrap,free,--wrap,calloc,--wrap,realloc \
+	-O3 -g -flto -DNODLL -DNOEFX -D__unix__ -DSDL_DISABLE_XMMINTRIN_H \
 	-ffast-math -mtune=cortex-a9 -mfpu=neon -DVITA -I. -Igame -D__SSE__  -D__SSE2__ -D__SSE3__ \
 	-I$(VITASDK)/$(PREFIX)/include/SDL2 -DSDL_DISABLE_EMMINTRIN_H -DSDL_DISABLE_PMMINTRIN_H \
 	-DNO_LIGHT
