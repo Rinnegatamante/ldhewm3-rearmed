@@ -107,6 +107,28 @@ idBounds::PlaneSide
 ================
 */
 int idBounds::PlaneSide( const idPlane &plane, const float epsilon ) const {
+#ifdef __vita__
+	const idVec3 &normal = plane.Normal();
+	float minDistance = plane[3];
+	float maxDistance = plane[3];
+
+	for ( int axis = 0; axis < 3; axis++ ) {
+		if ( normal[axis] >= 0.0f ) {
+			minDistance += normal[axis] * b[0][axis];
+			maxDistance += normal[axis] * b[1][axis];
+		} else {
+			minDistance += normal[axis] * b[1][axis];
+			maxDistance += normal[axis] * b[0][axis];
+		}
+	}
+	if ( minDistance > epsilon ) {
+		return PLANESIDE_FRONT;
+	}
+	if ( maxDistance < -epsilon ) {
+		return PLANESIDE_BACK;
+	}
+	return PLANESIDE_CROSS;
+#else
 	idVec3 center;
 	float d1, d2;
 
@@ -124,6 +146,7 @@ int idBounds::PlaneSide( const idPlane &plane, const float epsilon ) const {
 		return PLANESIDE_BACK;
 	}
 	return PLANESIDE_CROSS;
+#endif
 }
 
 /*
