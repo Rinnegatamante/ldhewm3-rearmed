@@ -1920,15 +1920,21 @@ void idImageManager::EndLevelLoad() {
 
 void idImageManager::AddAllocList( idImage * image )
 {
-	// Not the bind from the backend can add an image to the list
 	Sys_EnterCriticalSection( CRITICAL_SECTION_TWO );
 
-	if(image)
+	if( image && !image->allocPending )
 	{
-		//LOGI("AddAllocList");
+		image->allocPending = true;
 		imagesAlloc.Append( image );
 	}
 
+	Sys_LeaveCriticalSection( CRITICAL_SECTION_TWO );
+}
+
+void idImageManager::FinishAllocImage( idImage * image )
+{
+	Sys_EnterCriticalSection( CRITICAL_SECTION_TWO );
+	image->allocPending = false;
 	Sys_LeaveCriticalSection( CRITICAL_SECTION_TWO );
 }
 
@@ -1946,13 +1952,15 @@ void idImageManager::AddPurgeList( idImage * image )
 idImage * idImageManager::GetNextAllocImage()
 {
 	idImage * img = NULL;
+	Sys_EnterCriticalSection( CRITICAL_SECTION_TWO );
 
 	if(imagesAlloc.Num() > 0)
 	{
 		img = imagesAlloc[0];
-		imagesAlloc.Remove( img );
+		imagesAlloc.RemoveIndex( 0 );
 	}
 
+	Sys_LeaveCriticalSection( CRITICAL_SECTION_TWO );
 	return img;
 }
 

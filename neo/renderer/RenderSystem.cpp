@@ -674,6 +674,7 @@ void idRenderSystemLocal::BackendThreadTask()
 	{
 		// LOGI("IMAGE LOAD!");
 		img->ActuallyLoadImage( false );
+		globalImages->FinishAllocImage( img );
 	}
 
 

@@ -262,11 +262,13 @@ public:
 
 
 	bool				purgePending = false;
+	bool				allocPending = false;
 };
 
 ID_INLINE idImage::idImage() {
 	texnum = TEXTURE_NOT_LOADED;
 	purgePending = false;
+	allocPending = false;
 	type = TT_DISABLED;
 	frameUsed = 0;
 	classification = 0;
@@ -356,6 +358,7 @@ public:
 	void				EndLevelLoad();
 
 	void				AddAllocList(idImage * image);
+	void				FinishAllocImage(idImage * image);
 	void				AddPurgeList(idImage * iamge);
 
 	idImage *			GetNextAllocImage();
