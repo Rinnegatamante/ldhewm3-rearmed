@@ -322,6 +322,7 @@ all: build/$(TARGET).bin
 traceable: build/tracer.self
 
 build/$(TARGET).bin: $(TARGET).velf
+	@mkdir -p $(@D)
 	vita-make-fself -c -s $< build/$(TARGET).bin
 	
 build/tracer.self: $(TARGET).velf
